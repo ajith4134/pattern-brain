@@ -665,3 +665,15 @@ Owner: "do a deep research online and find rules which are best when followed wi
 **Synthesis, added as Rule 25 in `RULES.md`:** for each implementation step, treat the `PLAN.md` entry as the spec → write checkable conditions (ideally failing tests) for "correctly implemented" before writing code → implement the minimum to satisfy them → explicitly self-check the result against both the specific plan item AND Rule 23's domain-independence invariant → if implementation reveals the plan itself was wrong, fix `PLAN.md` (Rule 21) rather than letting code and plan silently drift apart. This is the concrete mechanism behind "think for itself if the concept is applied" — not a vague aspiration, an actual checklist sourced from real practice.
 
 **Not yet relevant (Rule 6 — noted, not acted on):** this is a process rule for the implementation phase, which hasn't started — README.md still correctly says "discussion phase," and nothing here changes that.
+
+---
+
+## BLOCK 37 — Fresh session: owner asked Claude to re-read the whole project folder (2026-06-20)
+
+Owner opened a new session (model set to Opus 4.8) and asked: "Pattern Brain folder and read all files in it carefully." A context-loading/comprehension request, not a new decision or new content — logged per Rule 2/4 (every message gets recorded, not just the substantive ones), kept deliberately short so it doesn't bloat the log with a recurring session-start event.
+
+**Done:** read all four content files end-to-end — `RULES.md` (all 25 rules), `README.md`, `PLAN.md` (§0–§7 + Implementation Progress Tracker), and `DISCUSSION_NOTES.md` (Blocks 1–36). Confirmed comprehension back to the owner with a synthesis covering: the domain-independence principle (§0/Rule 23), the model bank → Connector Intelligence → 3-final-features+evaluator structure, the still-open §7 items (order among Features 1/2/3; function-level vs algorithm-level slots; the "cpu ml models" deliverable format; the evaluator-metric domain-independence tension), and the live git remote + daily cloud research routine.
+
+**Re-flagged (carry-over, not new):** the GitHub token shared in plaintext chat (Blocks 32/33) and stored in `~/.git-credentials` — owner was asked to rotate/revoke it; flagged again for confirmation, since it persists in the conversation transcript regardless of local handling.
+
+**No PLAN.md change** — nothing was decided or discovered this message; it was a read-only comprehension pass. Per Rule 6, no next topic suggested — left to the owner to choose what to discuss next.
