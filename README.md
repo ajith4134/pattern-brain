@@ -19,3 +19,5 @@ A standalone research/architecture project — explicitly **not connected to the
 - `PLAN.md` — current decision state: what's actually decided/planned/proposed/open, and (once building starts) implementation progress in order (Rule 21/22).
 
 All future files for this project — code, data, deliverables — go here too, per Rule 1 in `RULES.md`.
+
+**Automation:** this repo (`https://github.com/ajith4134/pattern-brain`) is cloned daily (06:00 UTC) by a scheduled cloud routine that researches the weakest-understood open items in `PLAN.md` and opens a PR with proposed findings — it never marks anything decided or writes implementation code on its own (Rule 24, `DISCUSSION_NOTES.md` Block 34). Every local change also gets pushed to this remote per Rule 24.
