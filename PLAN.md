@@ -23,6 +23,17 @@ The living, current state of what's actually decided — distinct from `DISCUSSI
 
 **Enforced going forward by Rule 23** (`RULES.md`) — every future architecture/feature/build-order proposal in this project gets checked against this principle before it goes into the plan, specifically so this doesn't silently drift again the way Block 24's build order did.
 
+## 0b. Language policy — polyglot by stage, not Python-only (owner-mandated 2026-06-20, Block 39)
+✅ **DECIDED:** this project is **not implemented in Python only.** Languages are chosen by stage:
+- **Python = orchestration + prototyping layer** — the Connector Intelligence, model registry, dashboard backend (§8), and all glue. Every tool already named in this plan is Python (scikit-learn Estimator API, MLflow `pyfunc`, Ray Serve, LangChain LCEL, Kedro — Block 35).
+- **C/C++ = performance-critical stages** — primarily: the Evolution Engine testing **thousands of pathways in parallel** (Block 3, Case 3 — the compute-bound part); hot inner loops of specific nodes (HMM forward-backward, particle filters, Hawkes-process simulation, large bespoke matrix ops); real-time **belief-flow propagation across a large graph** (latency-sensitive for the live dashboard); and at-scale per-edge / per-pathway reputation updates.
+
+**Staging rule (how the two combine, consistent with Walking Skeleton/Block 24 + Rule 25 "minimum code, no gold-plating"):** prototype a component in **Python first**, profile it, then rewrite **only the proven hot paths** in C/C++. Never write C/C++ up front before there is a *measured* bottleneck.
+
+**Bridge — why polyglot is fully consistent with §0/Rule 23 + Block 35:** the common node interface (sklearn `fit`/`predict`/`transform`, or MLflow `pyfunc`'s single `predict()`) lets a **C++ node sit behind the identical interface a Python node exposes** — the Connector calls both the same way. Real binding mechanisms: **pybind11** / **Cython** (C++↔Python), **ctypes** / **cffi** (C↔Python), **ONNX** (cross-language for the neural subset), Ray Serve's cross-framework "looks just like a function call." So §0's *"the data bends to fit the system"* extends naturally to *"the language bends to fit the interface"* — a node's internals, **including its implementation language**, are swappable behind the contract. This means going polyglot does **not** require touching the Connector Intelligence, the belief format, or the graph — it lives entirely behind each node's adapter, exactly as Rule 23 requires.
+
+**Steelman of Python-only (Rule 16):** numpy/scipy/sklearn already call optimized C/Fortran (BLAS/LAPACK) under the hood, so array math runs at C speed without hand-written C; premature C++ adds build/toolchain complexity and slows iteration. That is precisely why the staging rule is *profile-then-optimize*, not *C++-first* — Python-only is the right **starting** posture, polyglot is the right **scaling** posture.
+
 ## 1. Project identity
 ✅ Name: **Pattern Brain**. Location: `/home/dicktator4134/pattern-brain/`. Explicitly separate from the trading bot (`/opt/trading-bot`) — no shared code, memory, or flags.
 
@@ -155,7 +166,9 @@ A dashboard **dedicated only to Pattern Brain** (no trading-bot coupling, Rule 1
 ---
 
 ## Implementation progress tracker (Rule 22)
-No implementation has begun yet. Build order for §5/§6, **revised 2026-06-20 (Block 30) — supersedes Block 24's order**, which had data-specific work before the model bank, contradicting §0's core principle (build domain-independent first, adapt data to it second):
+**Language policy applies to every step below (§0b):** prototype in Python first → profile → rewrite only measured hot paths in C/C++, behind the unchanged common node interface. No step is "Python-only" by assumption.
+
+Build order for §5/§6, **revised 2026-06-20 (Block 30) — supersedes Block 24's order**, which had data-specific work before the model bank, contradicting §0's core principle (build domain-independent first, adapt data to it second):
 
 1. **[not started] Starter model bank** (§5 subset) — the ~8-model set already proposed in Block 3 (Wavelet, HDBSCAN, HMM, PatchTST, Kalman, PySR, PPO, GNN router), each implemented against its own native, generic interface (e.g. "a sequence of D-dimensional vectors"), with **no reference to candles or any stock-specific shape** — test with synthetic/toy sequences if needed at this stage. Not arbitrary: it happens to span 6 of Block 18's 8 layers (Signal/Pattern/Sequence×2/Probability/Equation/Optimization), missing only explicit Noise and Decision representatives.
 2. **[not started] Connector Intelligence v0 — one hardcoded pathway**, not learned routing yet, and still data-agnostic. Wire a single fixed path (e.g. `Wavelet→HDBSCAN→HMM→PPO`) end-to-end through the Universal Belief Space format (§6, Block 5) before adding any routing intelligence — can be exercised with synthetic data at this stage too. This is a **Walking Skeleton** (Cockburn, *Writing Effective Use Cases*, 2000) / **Tracer Bullet** (Hunt & Thomas, *The Pragmatic Programmer*) — prove the architecture end-to-end on the smallest possible slice before building out breadth.
