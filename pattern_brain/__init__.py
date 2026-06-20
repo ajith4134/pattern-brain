@@ -12,8 +12,12 @@ from . import nodes  # noqa: F401  (import for side effect: registers built-in n
 from .registry import (
     register, create, all_node_types, by_layer, layers, default_bank,
 )
+from .connector import (
+    Connector, PathwayResult, Hop, DEFAULT_PATHWAY, default_connector,
+)
 
 __all__ = [
     "Belief", "SCHEMA_VERSION", "Node",
     "register", "create", "all_node_types", "by_layer", "layers", "default_bank",
+    "Connector", "PathwayResult", "Hop", "DEFAULT_PATHWAY", "default_connector",
 ]
