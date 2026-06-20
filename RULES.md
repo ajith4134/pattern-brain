@@ -98,6 +98,18 @@ After any change to files in this project, commit and push to the GitHub remote 
 
 **How to apply:** once all file edits for a given response are done, run one `git add` + `git commit` (message referencing the relevant Block/Rule) + `git push` to `main` before finishing that response — not fragmented per individual Edit call, not deferred/batched across multiple responses. This is in addition to Rules 2/4/21 (which govern *what* gets written) — Rule 24 makes sure git reflects it immediately. The scheduled routine (once created) follows this same rule when it commits its own findings, except it pushes to a side branch + opens a PR rather than pushing straight to `main`.
 
+## Rule 25 — Implementation Follows Spec→Test→Code→Self-Verify, Checked Against the Plan (owner-mandated 2026-06-20, sourced from real practice)
+Once this project moves into actual implementation (Rule 22), each step follows this sequence rather than jumping straight to code:
+1. Treat the relevant `PLAN.md` entry as the spec/contract for that step — it already records context, decision, and consequences (this project's own version of an Architecture Decision Record).
+2. Before writing implementation code, write down concrete, checkable conditions for "this is correctly implemented" — ideally as actual failing tests where practical (Test-Driven Development: red → green → refactor), not vague intent.
+3. Implement the minimum code that satisfies those conditions — no gold-plating beyond what the current step calls for.
+4. After implementing, explicitly self-check the result against (a) that specific `PLAN.md` item's stated intent, and (b) Rule 23's core architectural principle (does this stay domain-agnostic where it's supposed to?). This is the concrete form of "think for itself whether the concept is applied," not a vague aspiration.
+5. If implementing reveals the plan itself was wrong or incomplete, fix `PLAN.md` per Rule 21 rather than silently letting code and plan drift apart — update the record, don't just patch code and move on.
+
+**Why:** sourced from real, established practice, not invented — Anthropic's own published Claude Code guidance (research → plan → execute → review → ship, with human oversight at each gate; explicitly *not* coding first improves architectural quality; specific instructions outperform vague ones); Architecture Decision Records (the practice `PLAN.md`'s "Why" sections already follow); Design by Contract (Meyer) — preconditions/postconditions/invariants, which is exactly what Rule 23's principle is in formal terms; Test-Driven/Verification-Driven Development — research (TDAD) found vanilla coding agents average 6.5 broken tests per patch without this discipline, i.e. generation speed isn't the bottleneck, verification discipline is; Plan-and-Execute agent architectures, where a verification step checks postconditions and can trigger re-planning rather than blindly trusting the planner's output.
+
+**How to apply:** every implementation step in the Implementation Progress Tracker gets this treatment before being marked done — not satisfied by "it compiles" or "it ran without throwing."
+
 ---
 
 ### Cross-session pointer (the one exception to Rule 1)
