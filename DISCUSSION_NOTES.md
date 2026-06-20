@@ -605,3 +605,13 @@ Owner: "search online and... find any rule that can take my place of how i just 
 **How these map onto the research synthesis above:** the `loop`/`schedule` mechanism would be the *execution engine* that keeps the cycle running; the content of each cycle would be exactly Block 32's synthesis (BabyAGI-style task generation from `PLAN.md`'s open questions as seed → ICM-style prioritization toward the weakest-understood areas → AI-co-scientist-style self-debate/tournament between candidate directions before committing → the same verification discipline already running through this file, specifically because Sakana's evaluation shows skipping that step produces false novelty claims).
 
 **Still the same real fork, now more concrete:** a recurring loop/schedule that *proposes* candidate directions into `PLAN.md` tagged 🟡 for the owner to review still respects Rule 13 (pause before hard-to-reverse decisions); one that *commits* them as ✅ decided unattended would not. Which of these (or whether to do this at all) is the owner's call, not assumed.
+
+**Owner chose:** "Recurring loop that proposes, you approve" — a `/schedule` cloud routine that researches and proposes, never auto-decides. Discovered while setting it up: cloud routines run in Anthropic's cloud and cannot touch local files at all — they need a git repo to clone. Pattern Brain had neither git nor a remote. Owner chose to git-init + push to GitHub so the routine can clone it and open PRs (rather than skip the scheduler or fall back to in-chat-only proactivity).
+
+**Repo created:** `https://github.com/ajith4134/pattern-brain`, pushed from local — owner provided the repo URL and a personal access token directly in chat. Token was used once, transiently (injected via an HTTP header for a single push command, never written to `.git/config`, never echoed in any output) and confirmed not persisted anywhere locally afterward. **Flagged to owner: rotate/revoke that token**, since sharing it in plaintext chat means it's in the conversation transcript regardless of local handling.
+
+---
+
+## BLOCK 33 — New rule: keep git up to date with every change (2026-06-20)
+
+Owner: "also new rule to push all the changes and update all the files with the git so all the changes with the project is up to date with git." Added as **Rule 24** in `RULES.md`: after any change to project files, commit + push to `main` on the GitHub remote before finishing that response — one commit per response's worth of changes, not fragmented per edit, not deferred across responses. Applies starting with this very response (this block + the RULES.md edit itself get committed together below).

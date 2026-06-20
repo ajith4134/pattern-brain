@@ -91,6 +91,13 @@ Before proposing, designing, or building anything in this project, check it agai
 
 **How to apply:** for any new architecture/feature/build-order proposal, explicitly ask: would this still make sense if the data domain were swapped for something unrelated to stocks? If answering that requires touching the model bank, Connector Intelligence, or evolution engines themselves (not just the adapter), the proposal violates this principle and needs reworking before it goes into `PLAN.md`. This rule gets scanned and disclosed the same way as all the others, per Rule 20.
 
+## Rule 24 — Keep Git Up To Date With Every Change (owner-mandated 2026-06-20)
+After any change to files in this project, commit and push to the GitHub remote (`https://github.com/ajith4134/pattern-brain`) so the remote reflects local truth, not just at occasional checkpoints.
+
+**Why:** the project now has a GitHub remote (set up to support the scheduled research routine opening PRs); it needs to actually stay current for that to work, and so nothing local ever silently drifts from what's on GitHub.
+
+**How to apply:** once all file edits for a given response are done, run one `git add` + `git commit` (message referencing the relevant Block/Rule) + `git push` to `main` before finishing that response — not fragmented per individual Edit call, not deferred/batched across multiple responses. This is in addition to Rules 2/4/21 (which govern *what* gets written) — Rule 24 makes sure git reflects it immediately. The scheduled routine (once created) follows this same rule when it commits its own findings, except it pushes to a side branch + opens a PR rather than pushing straight to `main`.
+
 ---
 
 ### Cross-session pointer (the one exception to Rule 1)
