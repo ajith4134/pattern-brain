@@ -4,7 +4,9 @@ A standalone research/architecture project — explicitly **not connected to the
 
 **Scope:** researching ML/statistical model families for pattern-finding, sequence prediction, probability estimation, noise/signal separation, and synthetic data generation, plus the harder architectural problem of letting many heterogeneous models share input data and exchange outputs (a "universal data translator" + "universal belief space / connector intelligence" design).
 
-**Status:** still in the discussion phase — no code or deliverables built yet. See `DISCUSSION_NOTES.md` for the full, growing record of every idea discussed (owner's and Claude's). See `RULES.md` for how this project is run.
+**Status:** **implementation started 2026-06-20.** Build-tracker **step 1 (starter model bank) is complete** — see `pattern_brain/`. The rest of the build order is in `PLAN.md`. See `DISCUSSION_NOTES.md` for the full, growing record of every idea discussed (owner's and Claude's). See `RULES.md` for how this project is run.
+
+**Code (`pattern_brain/`):** a domain-independent model bank. Every node operates on a generic `(T, D)` sequence and emits a `Belief` through one common interface (`fit`/`predict`/`transform`/`process`) — zero candle/order-book coupling (Rule 23). **30 node types across 8 functional layers** (signal, noise, pattern, sequence, probability, equation, decision, rl). Run `python3 demo.py` to watch the whole bank work on a synthetic sequence, or `python3 tests/test_bank.py` for the contract + behavior suite. Language policy is polyglot by stage (`PLAN.md` §0b): Python now, C/C++ for proven hot paths later. Deps: `requirements.txt` (numpy/scipy/scikit-learn).
 
 **Planned features (added 2026-06-20, spec in `DISCUSSION_NOTES.md` Block 14):**
 1. **ML Model Creation + Mutation** — create new instances of existing model families and evolve/mutate already-trained models (hyperparameters, architecture tweaks, partial retraining, crossover between two trained models), gated by an automatic evaluator before any mutation replaces an incumbent.

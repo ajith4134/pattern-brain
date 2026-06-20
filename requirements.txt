@@ -1,0 +1,7 @@
+# Pattern Brain — build-tracker step 1 (starter model bank) dependencies.
+# Light stack only, per Block 3/24 "start small". Heavy/deep nodes (PatchTST,
+# deep RL/PPO) and PySR arrive at build step 6; C/C++ hot paths per PLAN.md §0b.
+# Installed in this environment via apt (python3-numpy/scipy/sklearn).
+numpy>=1.26
+scipy>=1.11
+scikit-learn>=1.4   # provides sklearn.cluster.HDBSCAN

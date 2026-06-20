@@ -739,3 +739,31 @@ Owner: "now start implementing the plan and i need more ml nodes many types" —
 **Implementation blocker hit + Rule 15 (ask, don't guess):** this environment has **no numpy/scipy/scikit-learn and no pip/ensurepip** (`python3 -m pip` and `ensurepip` both absent; only `apt-get` present, candidate `python3-numpy` available). Step 1's model bank, as specced (sklearn-based nodes on D-dimensional vector sequences), needs these. An attempted dependency-install check was declined by the owner. Rather than guess another install path (Rule 15 — "don't be shy" about asking), surfacing the environment choice to the owner directly: how to provision the ML stack (apt system packages / pip-in-venv / a different approach), and whether — given the new C/C++ mandate — they want the step-1 starter bank's compute nodes prototyped in Python (recommended per §0b staging) or begun in C/C++ now. **Critically: this project must NOT borrow the trading bot's Python environment (Rule 1 separation) — any deps go into a Pattern-Brain-local setup.**
 
 **PLAN.md updated:** new §0b (Language policy — polyglot by stage) added after §0, tagged ✅ DECIDED (owner-mandated), with the Python/C-C++ split, the staging rule, the pybind11/Cython/ctypes/cffi/ONNX bridge mechanisms, and the Rule-23 consistency argument; Implementation Progress Tracker preamble now states the language policy applies to every step. **No node code written yet** — paused on the environment decision per Rule 15 before starting step 1's implementation.
+
+---
+
+## BLOCK 40 — Build step 1 SHIPPED: the starter model bank, 30 node types (2026-06-20)
+
+Owner chose "Python deps via apt" for the environment; authorized + ran `sudo apt-get install python3-numpy python3-scipy python3-sklearn` (pulled numpy 2.2.4 / scipy 1.15.3 / sklearn 1.4.2 / matplotlib, plus **g++/gcc 14.2** as deps — handy for the future C/C++ stages, §0b). Then implemented **build-tracker step 1** following Rule 25 (spec→test→code→self-verify) and Rule 23 (domain-agnostic).
+
+**What was built — the `pattern_brain/` package:**
+- `belief.py` — `Belief` (Universal Belief Space unit, Block 5): typed, confidence-first (clamped [0,1]), JSON-serializable, schema-versioned.
+- `node.py` — `Node` common interface (Block 35): sklearn-style `fit`/`predict`/`transform` + a universal `process()`; `(T, D)` validation; metadata = the Model Genome record (Block 18). Explicitly documented as the contract a future **C/C++ node binds behind** (§0b).
+- `registry.py` — the model-bank registry / Model Genome seed (Block 18 + Kedro catalog idea, Block 35): `register`/`create`/`by_layer`/`default_bank`.
+- `nodes/` — **30 node types across all 8 Block-18 functional layers** (owner asked for "many types"; this is well beyond the original ~8):
+  - **signal** (4): fft, moving_average, difference, hilbert_envelope
+  - **noise** (4): savgol_denoise, pca_denoise, zscore_anomaly, isolation_forest
+  - **pattern** (5): kmeans, dbscan, hdbscan, gmm, agglomerative
+  - **sequence** (4): markov_chain, autoregressive, exp_smoothing, **gaussian_hmm** (real Baum-Welch EM)
+  - **probability** (4): kalman_filter, gaussian_process, bayesian_ridge, particle_filter
+  - **equation** (3): linear_regression, polynomial_regression, **symbolic_regression** (FFT-seeded library-search SR)
+  - **decision** (3): threshold_policy, sign_vote, logistic_regression
+  - **rl** (3): epsilon_greedy_bandit, ucb_bandit (the Block-22 evaluator's bandit family), q_learning
+- `tests/test_bank.py` — contract + behavior suite (Rule 25's checkable conditions): every node returns a valid `Belief` (confidence ∈ [0,1], JSON-serializable, source set), accepts 1-D input, rejects 3-D/NaN; real behavioral asserts (KMeans finds 2 clusters on bimodal data, AR continues a ramp, symbolic_regression recovers a sinusoid, HMM finds 2 states); and a **Rule-23 executable check** (tokenize-based — no candle/ohlcv/orderbook *identifiers* in the core). **All green.**
+- `demo.py` — runs the whole bank on a synthetic regime-switching sequence and prints each belief by layer (the textual precursor to §8's Belief-stream / Node-Inspector dashboard views).
+
+**Two real bugs found + fixed during self-verify (Rule 25.4, red→green):** (1) the lightweight symbolic-regression's `sin` candidate was hardcoded to frequency 1.0 → couldn't match an arbitrary sine; fixed by estimating the dominant angular frequency via FFT first (now genuinely recovers sinusoids). (2) the first Rule-23 test naively grepped raw text and false-flagged the project's own docstrings (which mention "candle"/"order book" to explain what the code *avoids*); fixed to inspect code identifiers via `tokenize`, not prose.
+
+**Honest coverage vs. Block 3's named starter set (Rule 25.5 — record divergence, don't hide it):** HMM/Kalman/HDBSCAN/PySR(→lightweight symbolic_regression) delivered; **Wavelet substituted** by FFT/Hilbert/Savitzky-Golay (no clean wavelet dependency in the light numpy/scipy/sklearn stack — Block 3/24 "start small"); **PatchTST and PPO deferred to build step 6** (need a deep-learning framework, out of the light stack); GNN router is the Connector (steps 2/4), not a bank node. Recorded in the tracker so code and plan don't silently drift.
+
+**PLAN.md updated:** Implementation Progress Tracker step 1 marked ✅ DONE with the delivered package, the 30-node/8-layer span, the test evidence, and the honest coverage/deferral notes. **Next in order (Rule 22): step 2 — Connector Intelligence v0 (one hardcoded pathway end-to-end through the Belief format)**, which is also where the §8 dashboard's walking-skeleton first appears. Not started this response.
