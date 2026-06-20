@@ -132,6 +132,26 @@ The living, current state of what's actually decided — distinct from `DISCUSSI
 
 ❓ **Step 10's deeper framing — partially clarified, not fully resolved:** registering Feature 3 confirms the three-feature *structure* matches Block 17 Step 10's hierarchy (Feature 1 = fill a slot with a model instance, Feature 2 = fill it with a new algorithm, Feature 3 = decide which slots connect). What's still unconfirmed: whether the "slots" Feature 3 connects should be defined at the *function* level (Block 16 Layer-1 categories — Noise Removal, Regime Detection, etc.) rather than at the level of specific algorithms/models. That deeper question remains open.
 
+## 8. Dedicated visualization dashboard (🟡 PROPOSED 2026-06-20, Block 38 — not owner-ratified)
+A dashboard **dedicated only to Pattern Brain** (no trading-bot coupling, Rule 1) to watch the system work in detail. Because this project's unit of value is the **connection/pathway, not the model** (§6, Block 17), the centerpiece is the **living graph itself**, not the usual loss/accuracy curves.
+
+**Seven views, each tied to an existing plan element:**
+1. **Living Graph (hero view)** — nodes = §5 models, edges = connections, **edge colour/thickness = pathway-reputation score**, animated belief-flow along active edges, node glow = currently firing.
+2. **Node Inspector** — a node's Model-Genome-Database metadata (§5/Block 18) + live internal state (HMM state probs, PySR's current equation, cluster assignment, etc.).
+3. **Pathway Leaderboard** — sortable table of full pathways with regime-split outcome stats + usage + reputation (Block 17).
+4. **Evaluator / Test panel** — the 5-layer evaluator (§4) made visible: walk-forward split timeline, DSR/PSR bars, bandit scores, the **NSGA-II Pareto front as a scatter**, anchor-set checks. This is the "tests working in detail."
+5. **World Model ribbon** — current detected regime as a timeline strip (Block 17 Step 8).
+6. **Evolution feed** — Features 1/2/3 candidates born → tested → promoted/killed, streaming.
+7. **Belief-space stream** — the auditable JSON beliefs (Block 5) written by "The Synthesist" (§3), confidence first-class.
+
+**Rule 23 separation (mandatory):** views 1-6 are domain-agnostic and stay in the core dashboard. The **only** stock-specific visuals (candlesticks, order-book heatmaps) live in a **separate "Adapter View" tab fed by the stock-data adapter** (build step 3) — never baked into the core. Portability test (same as §0): a future second domain lights up the same six core views via a new adapter, only the Adapter-View tab changing. **Open tension carried from §0:** view #4's Pareto axes (Sharpe/Drawdown) are financial → those metrics must be adapter-supplied/configurable, not hardcoded.
+
+**Recommended stack (🟡 recommendation, final choice owner's):** a single dedicated **React** app + **FastAPI WebSocket** backend; **React Flow** (hero living-graph — built-in animated edges, real-time-update pattern) + **Plotly** (charts incl. Pareto scatter); reuse off-the-shelf for generic sub-panels — **Aim** (run tracking, self-hosted, can sit on MLflow), **Evidently** (generic drift slice only), **Grafana/Prometheus** (infra/liveness). **Upgrade path:** **Sigma.js/Cytoscape.js** (WebGL/algorithm-rich) for the full "genome map" once the bank passes ~a few hundred nodes (React Flow/SVG doesn't scale past ~50k) — per Block 3/24 "start small." **Throwaway v0:** Streamlit + static Plotly network graph (fast, but can't host React Flow → stopgap only).
+
+**Reuse-vs-build line (Rule 16):** reuse Aim/MLflow/Kedro-Viz/Grafana/Evidently for everything generic; build custom **only** the live, animated, reputation-weighted pathway graph with belief-flow — the one thing none of them do, and the thing unique to "score connections, not models." Coherence note: Block 35's **Kedro-Viz** is the static/dev-time wiring diagram of the same graph; this dashboard is that graph **lit up and running** — they complement.
+
+**Build-order placement:** a cross-cutting track that grows with the build — walking-skeleton dashboard appears at **step 2** (watch the first hardcoded pathway run), each later step adds its view (step 3 → Adapter-View tab; final phase → Evolution feed). Not a single late deliverable.
+
 ---
 
 ## Implementation progress tracker (Rule 22)
@@ -146,4 +166,6 @@ No implementation has begun yet. Build order for §5/§6, **revised 2026-06-20 (
 
 Then, per Block 23 (already decided) and Block 25 (Feature 3 registered): **Features 1, 2 & 3 + their shared evaluator — last, together.** Feature 3 specifically needs step 2 (Connector Intelligence v0 — a graph has to exist before it can be evolved) plus the same evaluator Features 1/2 use.
 
-**Still open:** the order among Features 1, 2 & 3 *relative to each other* within that final phase (§7); and §0's flagged tension about whether the evaluator's financial-specific metrics (Sharpe/Drawdown) should themselves be a pluggable domain adapter.
+**Cross-cutting track — visualization dashboard (§8, 🟡 proposed):** not a numbered step but a parallel track that grows with the build — a walking-skeleton dashboard appears at **step 2** (so the first hardcoded pathway can be *watched* running), then each later step adds its corresponding view (step 3 → Adapter-View tab; final phase → Evolution feed). Reuses off-the-shelf tools for generic panels; the only custom-built piece is the live animated reputation-weighted pathway graph. Not to be deferred to the end.
+
+**Still open:** the order among Features 1, 2 & 3 *relative to each other* within that final phase (§7); §0's flagged tension about whether the evaluator's financial-specific metrics (Sharpe/Drawdown) should themselves be a pluggable domain adapter (also surfaces in §8 view #4's Pareto axes); and the §8 dashboard's final stack choice + whether a throwaway v0 gets built now.

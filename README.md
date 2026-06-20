@@ -10,6 +10,9 @@ A standalone research/architecture project — explicitly **not connected to the
 1. **ML Model Creation + Mutation** — create new instances of existing model families and evolve/mutate already-trained models (hyperparameters, architecture tweaks, partial retraining, crossover between two trained models), gated by an automatic evaluator before any mutation replaces an incumbent.
 2. **ML Algorithm Creation + Mutation** — a level above #1: discover and evolve genuinely new algorithms/equations (not just new settings within a fixed one), via evolutionary search over program/equation space (AutoML-Zero / FunSearch / AlphaEvolve-style), same automatic-evaluator gate.
 
+**Tooling (proposed 2026-06-20, spec in `PLAN.md` §8 / `DISCUSSION_NOTES.md` Block 38):**
+- **Dedicated visualization dashboard** — a project-only dashboard to watch the system work in detail; centerpiece is the *living graph* (nodes=models, edges=connections coloured by pathway-reputation, animated belief-flow), plus node inspector, pathway leaderboard, evaluator/test panel, regime ribbon, evolution feed, and belief-space stream. Domain-agnostic core + a separate stock-specific "Adapter View" tab (per Rule 23). 🟡 proposed, not yet ratified.
+
 **Open decision:** the format of the "cpu ml models" deliverable (curated download-manifest+script vs. committed weight files) — owner will decide once the discussion phase is done.
 
 **Files in this folder:**
