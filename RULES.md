@@ -1,0 +1,97 @@
+# Pattern Brain — Project Rules
+
+Kept as its own file, separate from DISCUSSION_NOTES.md (the content) and README.md (the overview) — per Rule 1/8 below. New rules get added here, dated, as the owner states them.
+
+## Rule 1 — Everything Lives Inside This Project Folder (owner-mandated 2026-06-20)
+All files related to this project — rules, discussion notes, code, data, deliverables, everything — live inside `/home/dicktator4134/pattern-brain/`. Nothing related to this project gets scattered into Claude's hidden memory system or anywhere else on disk.
+
+**Why:** Owner corrected this explicitly — the project's first notes had been saved to Claude's hidden cross-session memory directory instead of the project folder itself.
+
+**How to apply:** Before creating any file for this project, it goes here, not in `~/.claude/projects/.../memory/`. The only thing allowed outside this folder is a single small pointer (see "Cross-session pointer" below) so a future session knows this folder exists at all.
+
+## Rule 2 — Always Save All Discussions + Chat History (owner-mandated 2026-06-20)
+Every discussion in this project — the owner's ideas AND Claude's own analysis/ideas — gets saved in detail to `DISCUSSION_NOTES.md`, like taking notes. Every message, not just the "important" ones.
+
+## Rule 3 — Rule Files Are Separate From Content Files (owner-mandated 2026-06-20)
+Rule definitions (this file) never get mixed into the discussion log (`DISCUSSION_NOTES.md`) or the project overview (`README.md`), and vice versa.
+
+## Rule 4 — One Growing Notes File
+All discussion content goes into `DISCUSSION_NOTES.md`. Never split into per-topic files.
+
+## Rule 5 — Notes Updated at the Start, Not the End
+The notes file gets updated before/while composing a response, not after.
+
+## Rule 6 — No Premature Topic-Jumping
+Don't suggest the next topic until the current one is fully discussed (no obvious follow-up left). One next-step suggestion at a time, never several branches at once.
+
+## Rule 7 — 📝 Notes Symbol First
+Every response in this project starts with 📝 + a one-line note of what's being captured.
+
+## Rule 8 — Confirm Notes On Request
+If asked "did you save the notes," read the relevant section of `DISCUSSION_NOTES.md` back to confirm — don't just assert it.
+
+## Rule 9 — Decompose Before Searching (owner-adopted 2026-06-20, source: GPT Researcher)
+Break any research question into explicit sub-questions before searching. Search sub-questions in parallel where possible. Synthesize only after gathering, not query-by-query reactively.
+
+## Rule 10 — Force An Actual Conclusion (owner-adopted 2026-06-20, source: GPT Researcher, verbatim: *"You MUST determine your own concrete and valid opinion based on the given information. Do NOT defer to general and meaningless conclusions."*)
+Every research pass ends in a concrete stated opinion/conclusion. Wishy-washy non-answers ("it depends," "there are many factors") are not acceptable as a final answer.
+
+## Rule 11 — Rank Sources By Reliability + Recency (owner-adopted 2026-06-20, source: GPT Researcher)
+When citing external sources, explicitly weigh reliability and recency, not just topical relevance. Prefer trusted sources over less reliable ones; prefer newer over older when both are trustworthy.
+
+## Rule 12 — A Plan Isn't Done Until It's Concrete (owner-adopted 2026-06-20, source: Devin AI leaked system prompt)
+Don't call a plan finished until every concrete step/file/location it touches can be named. "Planning" isn't complete at the vague-intent stage.
+
+## Rule 13 — Forced Pause Before Critical Decisions (owner-adopted 2026-06-20, source: Devin AI's "think" tool)
+Before any critical or hard-to-reverse decision, take an explicit deliberation step, separate from normal output — don't fold it silently into the next action.
+
+## Rule 14 — Evidence Before Root Cause (owner-adopted 2026-06-20, source: Devin AI leaked system prompt)
+Gather evidence before naming a root cause. Never name the cause first and backfill evidence for it.
+
+## Rule 15 — Ask, Don't Guess (owner-adopted 2026-06-20, source: Devin AI leaked system prompt, verbatim: *"ask the user for help. Don't be shy."*)
+When missing context needed to proceed correctly, ask rather than guess. No silently assuming and moving on.
+
+## Rule 16 — Steelman The Rejected Option (owner-adopted 2026-06-20, source: Multi-Agent Debate)
+When evaluating a design choice between alternatives, explicitly argue the rejected option's strongest case before concluding — never present only the preferred path.
+
+## Rule 17 — Defined Roles For Sub-Tasks (owner-adopted 2026-06-20, source: MetaGPT/CAMEL/AutoGen)
+Give sub-tasks or sub-agents in this project's architecture defined roles/responsibilities, rather than one undifferentiated "do everything" pass.
+
+## Rule 18 — Slow Down On Hard Questions (owner-adopted 2026-06-20, source: System 1/System 2 dual-process framing)
+For hard or ambiguous questions, explicitly slow down — enumerate options and tradeoffs in view — rather than pattern-matching to the first plausible answer.
+
+## Rule 19 — Persona Question for Sub-Agents (RESOLVED 2026-06-20 → YES, source: "Giving AI Personalities Leads to More Human-Like Reasoning," arXiv 2502.14155)
+Owner resolved this: the Connector Intelligence gets an explicit defined persona, derived from patterns in the owner's own messages across this project (not a generic invented persona). Full persona spec lives in `DISCUSSION_NOTES.md` Block 11 (per Rule 4 — content stays in the one growing notes file, not a new file). Sub-agent/model-family personas (distinct from the Connector Intelligence's persona) are a related but separate follow-on, not yet built.
+
+## Rule 20 — Self-Select Applicable Rules Every Time, Then Disclose Them (owner-mandated 2026-06-20)
+Before answering any message in this project, scan every rule in this file and determine which ones apply to that specific message — without waiting for the owner to point them out. Apply them. At the end of the response, state which rule numbers were actually picked and followed.
+
+**Why:** owner wants the rule-set actively and automatically applied every time, not just sitting as reference material — and wants visibility into which rules governed each individual response.
+
+**How to apply:** every substantive response in this project ends with a short line, e.g. `Rules applied: 1, 4, 9, 13` — listing only the rule numbers genuinely used in that response, not a rote full list.
+
+## Rule 21 — Maintain PLAN.md, Always Read Before Updating (owner-mandated 2026-06-20)
+Maintain a `PLAN.md` file holding every decision and feature that has been fixed/agreed, in detail. Before any update to `PLAN.md`, read its current contents first — never blind-append or overwrite without reading it. After every new topic/idea/feature gets discussed and fixed/agreed, update `PLAN.md` to reflect it.
+
+**Why:** owner wants a single, current, decision-state document distinct from the chronological discussion log.
+
+**How to apply:** `DISCUSSION_NOTES.md` stays the chronological narrative (per Rule 4 — nothing changes there). `PLAN.md` is a different kind of artifact, organized by decision/feature area, not by timeline — it holds *only* what's actually decided/fixed/agreed, tagged honestly by status (decided vs. planned-feature vs. proposed-not-confirmed vs. open question), not a duplicate of the discussion log. Read it, then edit it, every time something gets fixed.
+
+## Rule 22 — Implementation Tracked In PLAN.md, In Order, No Skipping (owner-mandated 2026-06-20)
+Once this project moves from discussion into actual implementation, `PLAN.md` also becomes the progress tracker. Implement items in the order they're listed there; don't start the next item while the current one is incomplete.
+
+**Why:** prevents scattered, half-built implementation across many features at once.
+
+**How to apply:** before starting any implementation work, check `PLAN.md` for the current/next item in order. Mark progress there as items complete. No starting item N+1 while item N is still open. (Independently established here for Pattern Brain — not imported from the trading bot project, per this project's separation rule.)
+
+## Rule 23 — Never Silently Deviate From the Core Architectural Principle (owner-mandated 2026-06-20)
+Before proposing, designing, or building anything in this project, check it against the Core Architectural Principle in `PLAN.md` §0: **"The data bends to fit the system — the system never gets bent to fit the data."** Every model, the Connector Intelligence, the graph, and the evolution/mutation engines get defined first in their own generic, data-agnostic terms. Any stock/candle/order-book-specific concern is handled only inside a separate, swappable adapter — never baked into the core components themselves.
+
+**Why:** owner caught that an earlier build-order proposal (Block 24) had already violated this principle without anyone noticing, until it surfaced and got corrected (Block 30). The risk is silent drift back toward data-first design with no active check catching it.
+
+**How to apply:** for any new architecture/feature/build-order proposal, explicitly ask: would this still make sense if the data domain were swapped for something unrelated to stocks? If answering that requires touching the model bank, Connector Intelligence, or evolution engines themselves (not just the adapter), the proposal violates this principle and needs reworking before it goes into `PLAN.md`. This rule gets scanned and disclosed the same way as all the others, per Rule 20.
+
+---
+
+### Cross-session pointer (the one exception to Rule 1)
+A single reference entry exists in Claude's memory index (`reference_pattern_brain_location.md`) that says nothing except "this project's files live at `/home/dicktator4134/pattern-brain/`, start with RULES.md." No project content is duplicated there.
