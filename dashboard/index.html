@@ -264,6 +264,85 @@ function InterlinguaCard() {
     </div>`;
 }
 
+// --- Model Bank view (build step 6). The WHOLE bank — every node, not just the
+// active pathway — laid out as columns by functional layer (the §8 "genome map"
+// precursor). This is the answer to "I only see 4 nodes": the Living-Graph tab
+// shows the running pathway; this tab shows the full catalogue.
+const LAYER_ORDER = ["signal","noise","pattern","sequence","probability","equation","decision","rl"];
+function BankView({ color }) {
+  const [bank, setBank] = useState(null);
+  const [err, setErr] = useState(null);
+  const [sel, setSel] = useState(null);
+  useEffect(() => {
+    console.log("BankView: fetching /api/bank");
+    fetch("/api/bank").then(r => r.json())
+      .then(d => { console.log("BankView: got", d.n_nodes, "nodes"); setBank(d); })
+      .catch(e => { console.log("BankView: fetch error", e); setErr(String(e)); });
+  }, []);
+
+  const flow = React.useMemo(() => {
+    if (!bank) return { nodes: [], edges: [] };
+    const byLayer = {}; LAYER_ORDER.forEach(l => byLayer[l] = []);
+    bank.nodes.forEach(n => { (byLayer[n.layer] = byLayer[n.layer] || []).push(n); });
+    const nodes = [];
+    LAYER_ORDER.forEach((l, ci) => (byLayer[l] || []).forEach((n, ri) => {
+      nodes.push({
+        id: n.node_type,
+        position: { x: ci * 185, y: ri * 64 + 30 },
+        data: { label: n.node_type + (n.requires_y ? " *" : ""), meta: n },
+        style: { ...nodeStyle(l, false), width: 160, fontSize: 11 },
+        sourcePosition: "right", targetPosition: "left",
+      });
+    }));
+    return { nodes, edges: [] };
+  }, [bank]);
+
+  return html`
+    <div class="adapter-grid">
+      <div class="col">
+        <div class="card">
+          <h2>Model Bank — all ${bank ? bank.n_nodes : "…"} nodes across ${bank ? bank.layers.length : 8} functional layers (genome map)</h2>
+          <div id="bankgraph" style=${{ height: "640px" }}>
+            ${bank ? html`
+              <${ReactFlow} nodes=${flow.nodes} edges=${flow.edges} fitView
+                            onNodeClick=${(_e, n) => setSel(n.data.meta)}
+                            proOptions=${{ hideAttribution: true }}
+                            nodesDraggable=${false} nodesConnectable=${false}>
+                <${Background} color="#26314f" gap=${20} />
+                <${Controls} showInteractive=${false} />
+              <//>` : html`<div class="body"><span class="sub">${err ? ("bank error: " + err) : "loading bank…"}</span></div>`}
+          </div>
+          <div class="legend">
+            ${LAYER_ORDER.map(l => html`<span key=${l}><i style=${{ background: color(l) }}></i>${l}</span>`)}
+          </div>
+          <div class="hint">Columns = Block-18 functional layers (left→right). “ * ” marks a supervised node (needs labels). Click any node to inspect it.</div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card">
+          <h2>Node Inspector</h2>
+          <div class="body">
+            ${sel ? html`
+              <div class="kv"><span>node_type</span><span>${sel.node_type}</span></div>
+              <div class="kv"><span>layer</span><span style=${{ color: color(sel.layer) }}>${sel.layer}</span></div>
+              <div class="kv"><span>requires_y</span><span>${String(sel.requires_y)}</span></div>
+              <div class="kv"><span>is_transformer</span><span>${String(sel.is_transformer)}</span></div>
+              <div class="kv"><span>params</span><span>${JSON.stringify(sel.params)}</span></div>
+            ` : html`<span class="sub">Click a node in the genome map to see its Model-Genome metadata.</span>`}
+          </div>
+        </div>
+        <div class="card">
+          <h2>Bank by layer</h2>
+          <div class="body">
+            ${bank ? LAYER_ORDER.map(l => html`
+              <div class="kv" key=${l}><span style=${{ color: color(l) }}>${l}</span>
+                <span>${bank.nodes.filter(n => n.layer === l).length}</span></div>`) : null}
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
 function App() {
   const [meta, setMeta] = useState({});       // node_type -> metadata
   const [nodes, setNodes] = useState([]);
@@ -342,9 +421,12 @@ function App() {
         <h1>🧠 Pattern Brain</h1>
         <div class="tabs">
           <button class=${"tab" + (view==="core" ? " active" : "")} onClick=${() => setView("core")}>Core (Living Graph)</button>
+          <button class=${"tab" + (view==="bank" ? " active" : "")} onClick=${() => setView("bank")}>Model Bank</button>
           <button class=${"tab" + (view==="adapter" ? " active" : "")} onClick=${() => setView("adapter")}>Adapter View (stock)</button>
         </div>
-        <span class="sub">${view==="core" ? "step 2 · Connector Intelligence v0" : "step 3 · stock-data adapter (Rule 23)"}</span>
+        <span class="sub">${view==="core" ? "step 2 · Connector v0 · the active pathway"
+            : view==="bank" ? "step 6 · the whole model bank"
+            : "step 3 · stock-data adapter (Rule 23)"}</span>
         <div style=${{ marginLeft: "auto", display: "flex", gap: "12px", alignItems: "center" }}>
           ${view==="core" ? html`
             <span class="sub">${done ? "✓ run complete" : running ? "● running…" : "idle"}</span>
@@ -353,7 +435,8 @@ function App() {
         </div>
       </header>
 
-      ${view === "adapter" ? html`<${AdapterView} />` : html`
+      ${view === "adapter" ? html`<${AdapterView} />`
+        : view === "bank" ? html`<${BankView} color=${color} />` : html`
       <div class="wrap">
         <div class="col">
           <div class="card">
@@ -388,7 +471,7 @@ function App() {
               <div class="f"><b>World Model ribbon</b>detected regime timeline — needs regime routing (step 4)</div>
               <div class="f"><b>Evolution feed</b>candidates born→tested→promoted — needs Features 1/2/3 (final phase)</div>
               <div class="f" style=${{ opacity: 1, borderStyle: "solid" }}><b style=${{ color: "#5eead4" }}>Adapter View (stock) ✓</b>built (step 3) — see the tab above; the ONLY stock-specific tab (Rule 23)</div>
-              <div class="f"><b>Genome map</b>the full ~500-algorithm bank (Block 42) — needs step 6 + Sigma.js at scale</div>
+              <div class="f" style=${{ opacity: 1, borderStyle: "solid" }}><b style=${{ color: "#5eead4" }}>Genome map ✓</b>built (step 6) — see the “Model Bank” tab; Sigma.js is the upgrade past a few hundred nodes</div>
             </div>
           </div>
         </div>

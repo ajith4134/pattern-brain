@@ -129,3 +129,86 @@ class AgglomerativeNode(Node):
         return Belief("cluster",
                       {"labels": labels.tolist(), "n_clusters": int(len(set(labels)))},
                       _silhouette_conf(X, labels), self.name)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a) — more clustering algorithms (Block 42 clustering cat).
+# --------------------------------------------------------------------------
+from sklearn.cluster import MeanShift, SpectralClustering, Birch, OPTICS  # noqa: E402
+
+
+@register
+class MeanShiftNode(Node):
+    """Mean-shift clustering (no preset cluster count; bandwidth-driven)."""
+    layer = "pattern"
+    node_type = "mean_shift"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        try:
+            labels = MeanShift(bin_seeding=True).fit_predict(X)
+        except Exception:
+            labels = np.zeros(X.shape[0], dtype=int)
+        return Belief("cluster",
+                      {"labels": labels.tolist(), "n_clusters": int(len(set(labels)))},
+                      _silhouette_conf(X, labels), self.name)
+
+
+@register
+class SpectralClusteringNode(Node):
+    """Spectral clustering on an RBF affinity graph (transductive)."""
+    layer = "pattern"
+    node_type = "spectral_clustering"
+
+    def __init__(self, n_clusters: int = 3, **kw):
+        super().__init__(n_clusters=n_clusters, **kw)
+        self.n_clusters = n_clusters
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        k = max(2, min(self.n_clusters, X.shape[0] - 1))
+        try:
+            labels = SpectralClustering(n_clusters=k, affinity="rbf",
+                                        assign_labels="discretize",
+                                        random_state=0).fit_predict(X)
+        except Exception:
+            labels = np.zeros(X.shape[0], dtype=int)
+        return Belief("cluster",
+                      {"labels": labels.tolist(), "n_clusters": int(len(set(labels)))},
+                      _silhouette_conf(X, labels), self.name)
+
+
+@register
+class BirchNode(Node):
+    """BIRCH incremental clustering (memory-efficient on large streams)."""
+    layer = "pattern"
+    node_type = "birch"
+
+    def __init__(self, n_clusters: int = 3, **kw):
+        super().__init__(n_clusters=n_clusters, **kw)
+        self.n_clusters = n_clusters
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        k = max(1, min(self.n_clusters, X.shape[0]))
+        labels = Birch(n_clusters=k).fit_predict(X)
+        return Belief("cluster",
+                      {"labels": labels.tolist(), "n_clusters": int(len(set(labels)))},
+                      _silhouette_conf(X, labels), self.name)
+
+
+@register
+class OPTICSNode(Node):
+    """OPTICS density clustering (variable-density, DBSCAN generalization)."""
+    layer = "pattern"
+    node_type = "optics"
+
+    def __init__(self, min_samples: int = 5, **kw):
+        super().__init__(min_samples=min_samples, **kw)
+        self.min_samples = min_samples
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        ms = max(2, min(self.min_samples, X.shape[0] - 1))
+        labels = OPTICS(min_samples=ms).fit_predict(X)
+        n = len(set(labels) - {-1})
+        return Belief("cluster",
+                      {"labels": labels.tolist(), "n_clusters": int(n),
+                       "n_noise": int((labels == -1).sum())},
+                      _silhouette_conf(X, labels), self.name)

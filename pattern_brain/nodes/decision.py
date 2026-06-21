@@ -74,3 +74,107 @@ class LogisticRegressionNode(Node):
                       {"predictions": pred.tolist(),
                        "max_proba": proba.max(axis=1).tolist()},
                       float(proba.max(axis=1).mean()), self.name)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a) — supervised classifiers (Block 42 Classical
+# Classification). All require labels y; routing withholds them when no labels are
+# present. Each emits the 'decision' contract (predictions + max_proba).
+# --------------------------------------------------------------------------
+from sklearn.svm import SVC  # noqa: E402
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier  # noqa: E402
+from sklearn.neighbors import KNeighborsClassifier  # noqa: E402
+from sklearn.naive_bayes import GaussianNB  # noqa: E402
+from sklearn.tree import DecisionTreeClassifier  # noqa: E402
+
+
+class _ClassifierNode(Node):
+    """Base for supervised decision classifiers (emits 'decision')."""
+    layer = "decision"
+    requires_y = True
+
+    def _make(self):  # pragma: no cover - overridden
+        raise NotImplementedError
+
+    def _fit(self, X, y=None):
+        y = np.asarray(y).ravel()
+        self._classes = np.unique(y)
+        self._m = None if len(self._classes) < 2 else self._make().fit(X, y)
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        if self._m is None:
+            return Belief("decision",
+                          {"predictions": [int(self._classes[0])] * X.shape[0],
+                           "note": "single-class target"}, 0.0, self.name)
+        pred = self._m.predict(X)
+        out = {"predictions": np.asarray(pred).tolist()}
+        conf = 0.5
+        if hasattr(self._m, "predict_proba"):
+            proba = self._m.predict_proba(X)
+            out["max_proba"] = proba.max(axis=1).tolist()
+            conf = float(proba.max(axis=1).mean())
+        return Belief("decision", out, conf, self.name)
+
+
+@register
+class SVMClassifierNode(_ClassifierNode):
+    node_type = "svm_classifier"
+
+    def _make(self):
+        return SVC(probability=True, gamma="scale", random_state=0)
+
+
+@register
+class RandomForestNode(_ClassifierNode):
+    node_type = "random_forest"
+
+    def __init__(self, n_estimators: int = 100, random_state: int = 0, **kw):
+        super().__init__(n_estimators=n_estimators, random_state=random_state, **kw)
+        self.n_estimators = n_estimators
+        self.random_state = random_state
+
+    def _make(self):
+        return RandomForestClassifier(n_estimators=self.n_estimators,
+                                      random_state=self.random_state)
+
+
+@register
+class GradientBoostingNode(_ClassifierNode):
+    node_type = "gradient_boosting"
+
+    def _make(self):
+        return GradientBoostingClassifier(random_state=0)
+
+
+@register
+class KNNClassifierNode(_ClassifierNode):
+    node_type = "knn_classifier"
+
+    def __init__(self, n_neighbors: int = 5, **kw):
+        super().__init__(n_neighbors=n_neighbors, **kw)
+        self.n_neighbors = n_neighbors
+
+    def _fit(self, X, y=None):
+        y = np.asarray(y).ravel()
+        self._classes = np.unique(y)
+        if len(self._classes) < 2:
+            self._m = None
+        else:
+            k = max(1, min(self.n_neighbors, X.shape[0]))
+            self._m = KNeighborsClassifier(n_neighbors=k).fit(X, y)
+
+
+@register
+class GaussianNBNode(_ClassifierNode):
+    node_type = "gaussian_nb"
+
+    def _make(self):
+        return GaussianNB()
+
+
+@register
+class DecisionTreeNode(_ClassifierNode):
+    node_type = "decision_tree"
+
+    def _make(self):
+        return DecisionTreeClassifier(random_state=0)

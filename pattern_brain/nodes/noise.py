@@ -122,3 +122,150 @@ class IsolationForestNode(Node):
                       {"n_anomalies": int(flags.sum()), "fraction": frac,
                        "scores": scores.tolist(), "flags": flags.tolist()},
                       float(min(1.0, frac * 3)), self.name)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a) — more anomaly detectors + dimensionality-reduction
+# reconstruction denoisers (Block 42 cats: anomaly detection, dim-reduction).
+# --------------------------------------------------------------------------
+from sklearn.neighbors import LocalOutlierFactor  # noqa: E402
+from sklearn.svm import OneClassSVM  # noqa: E402
+from sklearn.covariance import EllipticEnvelope  # noqa: E402
+from sklearn.decomposition import FastICA, TruncatedSVD, KernelPCA  # noqa: E402
+
+
+def _anomaly_belief(flags, scores, name):
+    flags = np.asarray(flags).astype(int)
+    frac = float(flags.mean())
+    return Belief("anomaly",
+                  {"n_anomalies": int(flags.sum()), "fraction": frac,
+                   "scores": np.asarray(scores, float).tolist(),
+                   "flags": flags.tolist()},
+                  float(min(1.0, frac * 3)), name)
+
+
+@register
+class LOFNode(Node):
+    """Local Outlier Factor anomaly detection (density-deviation based)."""
+    layer = "noise"
+    node_type = "local_outlier_factor"
+
+    def __init__(self, n_neighbors: int = 20, **kw):
+        super().__init__(n_neighbors=n_neighbors, **kw)
+        self.n_neighbors = n_neighbors
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        k = max(1, min(self.n_neighbors, X.shape[0] - 1))
+        m = LocalOutlierFactor(n_neighbors=k)
+        pred = m.fit_predict(X)
+        scores = -m.negative_outlier_factor_
+        return _anomaly_belief(pred == -1, scores, self.name)
+
+
+@register
+class OneClassSVMNode(Node):
+    """One-Class SVM novelty/anomaly detection."""
+    layer = "noise"
+    node_type = "one_class_svm"
+
+    def __init__(self, nu: float = 0.1, **kw):
+        super().__init__(nu=nu, **kw)
+        self.nu = nu
+        self._m = None
+
+    def _fit(self, X, y=None):
+        self._m = OneClassSVM(nu=self.nu, gamma="scale").fit(X)
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        pred = self._m.predict(X)
+        scores = -self._m.score_samples(X)
+        return _anomaly_belief(pred == -1, scores, self.name)
+
+
+@register
+class EllipticEnvelopeNode(Node):
+    """Gaussian elliptic-envelope (robust covariance) outlier detection."""
+    layer = "noise"
+    node_type = "elliptic_envelope"
+
+    def __init__(self, contamination: float = 0.1, random_state: int = 0, **kw):
+        super().__init__(contamination=contamination, random_state=random_state, **kw)
+        self.contamination = contamination
+        self.random_state = random_state
+        self._m = None
+
+    def _fit(self, X, y=None):
+        self._m = EllipticEnvelope(contamination=self.contamination,
+                                   random_state=self.random_state,
+                                   support_fraction=1.0).fit(X)
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        pred = self._m.predict(X)
+        scores = -self._m.score_samples(X)
+        return _anomaly_belief(pred == -1, scores, self.name)
+
+
+class _ReconDenoiser(Node):
+    """Base for dimensionality-reduction denoisers: project to a low-rank space
+    and reconstruct; the residual is the removed noise (emits 'denoised')."""
+    layer = "noise"
+    is_transformer = True
+
+    def __init__(self, n_components: int = 1, **kw):
+        super().__init__(n_components=n_components, **kw)
+        self.n_components = n_components
+        self._m = None
+
+    def _make(self, k):  # pragma: no cover - overridden
+        raise NotImplementedError
+
+    def _fit(self, X, y=None):
+        # Low-rank denoising of a single channel is a no-op (and some backends,
+        # e.g. TruncatedSVD, require >=2 features) -> passthrough when D < 2.
+        if X.shape[1] < 2:
+            self._m = None
+            return
+        k = max(1, min(self.n_components, X.shape[1] - 1, X.shape[0] - 1 if X.shape[0] > 1 else 1))
+        self._m = self._make(max(1, k)).fit(X)
+
+    def _transform(self, X: np.ndarray) -> np.ndarray:
+        if self._m is None:
+            return X.copy()
+        return self._m.inverse_transform(self._m.transform(X))
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        clean = self._transform(X)
+        resid = float(np.mean(np.abs(X - clean)))
+        denom = float(np.mean(np.abs(X))) + 1e-9
+        return Belief("denoised",
+                      {"series": clean.tolist(), "residual": resid},
+                      float(max(0.0, 1.0 - resid / denom)), self.name)
+
+
+@register
+class ICADenoiseNode(_ReconDenoiser):
+    """Independent Component Analysis low-rank reconstruction denoiser."""
+    node_type = "ica_denoise"
+
+    def _make(self, k):
+        return FastICA(n_components=k, random_state=0, max_iter=500, whiten="unit-variance")
+
+
+@register
+class SVDDenoiseNode(_ReconDenoiser):
+    """Truncated-SVD low-rank reconstruction denoiser."""
+    node_type = "svd_denoise"
+
+    def _make(self, k):
+        kk = max(1, min(k, 1_000))
+        return TruncatedSVD(n_components=kk, random_state=0)
+
+
+@register
+class KernelPCADenoiseNode(_ReconDenoiser):
+    """Kernel-PCA reconstruction denoiser (non-linear low-rank)."""
+    node_type = "kernel_pca_denoise"
+
+    def _make(self, k):
+        return KernelPCA(n_components=k, kernel="rbf", fit_inverse_transform=True,
+                         gamma=None, random_state=0)

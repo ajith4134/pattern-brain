@@ -105,3 +105,87 @@ class SymbolicRegressionNode(Node):
                 best = {"form": name, "expression": form, "coef": coef.tolist(),
                         "r2": float(max(0.0, r2)), "bic": float(bic)}
         return Belief("equation", best, float(max(0.0, min(1.0, best["r2"]))), self.name)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a) — regularized / robust linear laws (Block 42
+# Classical Regression). Each fits feature 0 against the time index and emits the
+# 'equation' contract (coef + r2), like LinearRegressionNode.
+# --------------------------------------------------------------------------
+from sklearn.linear_model import Ridge, Lasso, ElasticNet, HuberRegressor, TheilSenRegressor  # noqa: E402
+
+
+class _LinearLawNode(Node):
+    """Base: fit a linear model of feature 0 on the time index, emit 'equation'."""
+    layer = "equation"
+
+    def _make(self):  # pragma: no cover - overridden
+        raise NotImplementedError
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        T = X.shape[0]
+        t = np.arange(T).reshape(-1, 1).astype(float)
+        y = X[:, 0]
+        m = self._make().fit(t, y)
+        r2 = float(max(0.0, m.score(t, y)))
+        coef = np.ravel(getattr(m, "coef_", [0.0]))
+        intercept = float(np.ravel(getattr(m, "intercept_", [0.0]))[0])
+        return Belief("equation",
+                      {"coef": coef.tolist(), "intercept": intercept, "r2": r2,
+                       "form": self.node_type},
+                      r2, self.name)
+
+
+@register
+class RidgeNode(_LinearLawNode):
+    node_type = "ridge_regression"
+
+    def __init__(self, alpha: float = 1.0, **kw):
+        super().__init__(alpha=alpha, **kw)
+        self.alpha = alpha
+
+    def _make(self):
+        return Ridge(alpha=self.alpha)
+
+
+@register
+class LassoNode(_LinearLawNode):
+    node_type = "lasso_regression"
+
+    def __init__(self, alpha: float = 0.1, **kw):
+        super().__init__(alpha=alpha, **kw)
+        self.alpha = alpha
+
+    def _make(self):
+        return Lasso(alpha=self.alpha, max_iter=5000)
+
+
+@register
+class ElasticNetNode(_LinearLawNode):
+    node_type = "elasticnet_regression"
+
+    def __init__(self, alpha: float = 0.1, l1_ratio: float = 0.5, **kw):
+        super().__init__(alpha=alpha, l1_ratio=l1_ratio, **kw)
+        self.alpha = alpha
+        self.l1_ratio = l1_ratio
+
+    def _make(self):
+        return ElasticNet(alpha=self.alpha, l1_ratio=self.l1_ratio, max_iter=5000)
+
+
+@register
+class HuberNode(_LinearLawNode):
+    """Robust (outlier-resistant) linear law."""
+    node_type = "huber_regression"
+
+    def _make(self):
+        return HuberRegressor(max_iter=500)
+
+
+@register
+class TheilSenNode(_LinearLawNode):
+    """Robust non-parametric (median-of-slopes) linear law."""
+    node_type = "theil_sen_regression"
+
+    def _make(self):
+        return TheilSenRegressor(random_state=0, max_subpopulation=2000)

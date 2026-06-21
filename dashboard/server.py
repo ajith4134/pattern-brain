@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from functools import lru_cache
 
 import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -60,16 +61,22 @@ def index() -> FileResponse:
     return FileResponse(INDEX)
 
 
+# The bank, the routed run, and the conformance report are all DETERMINISTIC
+# (fixed bank, fixed synthetic data), and some became expensive after the step-6
+# expansion to ~60 nodes. They auto-fire on page load, so compute each ONCE and
+# cache it — otherwise repeated/concurrent loads recompute the whole bank and can
+# saturate the single-process dev server. (Restart the server to refresh.)
+@lru_cache(maxsize=1)
+def _bank_payload() -> dict:
+    nodes = [n.metadata() for n in pb.default_bank()]
+    return {"layers": pb.layers(), "n_nodes": len(nodes), "nodes": nodes}
+
+
 @app.get("/api/bank")
 def bank() -> JSONResponse:
     """The model-genome map: one metadata record per registered node, grouped by
-    functional layer (the precursor to §8's full genome view)."""
-    nodes = [n.metadata() for n in pb.default_bank()]
-    return JSONResponse({
-        "layers": pb.layers(),
-        "n_nodes": len(nodes),
-        "nodes": nodes,
-    })
+    functional layer (the precursor to §8's full genome view). Cached."""
+    return JSONResponse(_bank_payload())
 
 
 @app.get("/api/pathway")
@@ -91,20 +98,24 @@ def run() -> JSONResponse:
     return JSONResponse(res.to_dict())
 
 
-@app.get("/api/route")
-def route() -> JSONResponse:
-    """Connector v1 (build step 4): a router DECIDES the pathway hop-by-hop over
-    the full bank (offline HeuristicRouter — no LLM/API needed). Returns the
-    discovered pathway + the per-hop routing rationale, so the dashboard can show
-    *why* each node was chosen, not just a fixed list."""
+@lru_cache(maxsize=1)
+def _route_payload() -> dict:
     routed = pb.default_routed_connector().route(synthetic_sequence())
-    return JSONResponse({
+    return {
         "router": pb.default_routed_connector().router.name,
         "pathway": routed.result.pathway,
         "decisions": [d.to_dict() for d in routed.decisions],
         "output": routed.result.output.to_dict() if routed.result.output else None,
         "trace": routed.result.to_dict(),
-    })
+    }
+
+
+@app.get("/api/route")
+def route() -> JSONResponse:
+    """Connector v1 (build step 4): a router DECIDES the pathway hop-by-hop over
+    the full bank (offline HeuristicRouter — no LLM/API needed). Returns the
+    discovered pathway + the per-hop routing rationale. Cached (deterministic)."""
+    return JSONResponse(_route_payload())
 
 
 def synthetic_candles(T: int = 360, seed: int = 11):
@@ -153,12 +164,8 @@ def adapter() -> JSONResponse:
     })
 
 
-@app.get("/api/conformance")
-def conformance() -> JSONResponse:
-    """Step-5 interlingua view: the versioned shared-belief contract made visible.
-    Returns the interlingua version + catalog, a conformance report over a default
-    pathway run (drift detection), and coherence notes over the full bank (the
-    loose types whose payloads vary across emitters)."""
+@lru_cache(maxsize=1)
+def _conformance_payload() -> dict:
     run = pb.default_connector().run(synthetic_sequence())
     rep = pb.conformance_report(run.beliefs())
     # coherence needs multiple emitters per type -> compute over the whole bank
@@ -172,12 +179,21 @@ def conformance() -> JSONResponse:
         except Exception:
             pass
     coherence = [n.to_dict() for n in pb.interlingua_coherence(bank_beliefs)]
-    return JSONResponse({
+    return {
         "version": pb.INTERLINGUA_VERSION,
         "catalog": pb.catalog(),
         "run_report": rep.to_dict(),
         "coherence": coherence,
-    })
+    }
+
+
+@app.get("/api/conformance")
+def conformance() -> JSONResponse:
+    """Step-5 interlingua view: the versioned shared-belief contract made visible.
+    Returns the interlingua version + catalog, a conformance report over a default
+    pathway run (drift detection), and coherence notes over the full bank. Cached
+    (processes all ~60 nodes — the most expensive endpoint after step 6)."""
+    return JSONResponse(_conformance_payload())
 
 
 @app.websocket("/ws/run")

@@ -209,3 +209,103 @@ class GaussianHMMNode(Node):
                        "next_distribution": nxt_dist.tolist(),
                        "log_likelihood": self._loglik},
                       float(cur_post.max()), self.name)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a) — more classical forecasters (Block 42 time-series).
+# Each predicts the next vector from the window; emits the loose 'forecast' type.
+# --------------------------------------------------------------------------
+def _forecast_belief(next_vec, resid_scale, name, extra=None):
+    next_vec = np.asarray(next_vec, float).ravel()
+    payload = {"next_vector": next_vec.tolist(), "estimate": float(next_vec[0])}
+    if extra:
+        payload.update(extra)
+    conf = float(1.0 / (1.0 + resid_scale))
+    return Belief("forecast", payload, max(0.0, min(1.0, conf)), name)
+
+
+@register
+class NaiveMeanForecastNode(Node):
+    """Forecast the next value as the window mean (a strong, honest baseline)."""
+    layer = "sequence"
+    node_type = "naive_mean_forecast"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        nxt = X.mean(axis=0)
+        resid = float(np.mean(np.abs(X - nxt)))
+        return _forecast_belief(nxt, resid, self.name)
+
+
+@register
+class DriftForecastNode(Node):
+    """Random-walk-with-drift forecast: last value + average per-step change."""
+    layer = "sequence"
+    node_type = "drift_forecast"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        if X.shape[0] < 2:
+            nxt = X[-1]
+            resid = 0.0
+        else:
+            drift = (X[-1] - X[0]) / (X.shape[0] - 1)
+            nxt = X[-1] + drift
+            resid = float(np.mean(np.abs(np.diff(X, axis=0) - drift)))
+        return _forecast_belief(nxt, resid, self.name)
+
+
+@register
+class HoltLinearForecastNode(Node):
+    """Holt's double exponential smoothing (level + trend) one-step forecast."""
+    layer = "sequence"
+    node_type = "holt_linear_forecast"
+
+    def __init__(self, alpha: float = 0.5, beta: float = 0.3, **kw):
+        super().__init__(alpha=alpha, beta=beta, **kw)
+        self.alpha = alpha
+        self.beta = beta
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        a, b = self.alpha, self.beta
+        level = X[0].astype(float).copy()
+        trend = (X[1] - X[0]).astype(float) if X.shape[0] > 1 else np.zeros(X.shape[1])
+        errs = []
+        for t in range(1, X.shape[0]):
+            pred = level + trend
+            errs.append(np.abs(X[t] - pred))
+            new_level = a * X[t] + (1 - a) * (level + trend)
+            trend = b * (new_level - level) + (1 - b) * trend
+            level = new_level
+        nxt = level + trend
+        resid = float(np.mean(errs)) if errs else 0.0
+        return _forecast_belief(nxt, resid, self.name)
+
+
+@register
+class ThetaForecastNode(Node):
+    """Theta-method-style forecast: average of a linear trend extrapolation and an
+    exponentially-smoothed level (a robust competition-grade baseline)."""
+    layer = "sequence"
+    node_type = "theta_forecast"
+
+    def __init__(self, alpha: float = 0.3, **kw):
+        super().__init__(alpha=alpha, **kw)
+        self.alpha = alpha
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        T = X.shape[0]
+        t = np.arange(T)
+        nxt_cols = []
+        for j in range(X.shape[1]):
+            y = X[:, j]
+            if T >= 2:
+                m, c = np.polyfit(t, y, 1)
+                trend_next = m * T + c
+            else:
+                trend_next = y[-1]
+            lvl = y[0]
+            for v in y[1:]:
+                lvl = self.alpha * v + (1 - self.alpha) * lvl
+            nxt_cols.append(0.5 * trend_next + 0.5 * lvl)
+        nxt = np.array(nxt_cols)
+        resid = float(np.std(X)) / (abs(float(np.mean(X))) + 1.0)
+        return _forecast_belief(nxt, resid, self.name)

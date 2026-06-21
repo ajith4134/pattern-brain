@@ -50,7 +50,7 @@ def test_registry():
                 "probability", "equation", "decision", "rl"}
     check(set(layers) == expected, f"layers mismatch: got {layers}")
     n = len(pb.all_node_types())
-    check(n >= 25, f"expected many node types (>=25), got {n}")
+    check(n >= 55, f"expected the step-6-expanded bank (>=55), got {n}")
     print(f"  registry: {n} node types across {len(layers)} layers: {layers}")
     for layer in sorted(layers):
         print(f"    [{layer:11}] {pb.by_layer(layer)}")

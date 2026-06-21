@@ -47,7 +47,7 @@ def test_bank_endpoint():
     check(r.status_code == 200, f"/api/bank status {r.status_code}")
     d = r.json()
     check(d["n_nodes"] == len(d["nodes"]), "n_nodes mismatch with nodes list")
-    check(d["n_nodes"] >= 30, f"expected >=30 bank nodes, got {d['n_nodes']}")
+    check(d["n_nodes"] >= 55, f"expected the step-6-expanded bank (>=55), got {d['n_nodes']}")
     check(set(d["layers"]) >= {"signal", "pattern", "sequence", "decision"},
           f"layers missing expected entries: {d['layers']}")
     print(f"  GET /api/bank -> {d['n_nodes']} nodes, layers={d['layers']}")

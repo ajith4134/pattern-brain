@@ -96,3 +96,80 @@ class HilbertEnvelopeNode(Node):
         amp = float(env.mean())
         return Belief("signal", {"mean_envelope": amp, "series": env.tolist()},
                       float(np.tanh(amp)), self.name)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a) — light-stack expansion: more signal-processing nodes.
+# --------------------------------------------------------------------------
+from scipy.signal import detrend as _scipy_detrend, butter, filtfilt, welch  # noqa: E402
+
+
+@register
+class DetrendNode(Node):
+    """Remove the linear trend from each feature (stationarity via detrending)."""
+    layer = "signal"
+    node_type = "detrend"
+    is_transformer = True
+
+    def _transform(self, X: np.ndarray) -> np.ndarray:
+        if X.shape[0] < 2:
+            return X.copy()
+        return _scipy_detrend(X, axis=0, type="linear")
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        out = self._transform(X)
+        removed = float(np.mean(np.abs(X - out)))
+        return Belief("signal",
+                      {"series": out.tolist(), "mean_abs_change": removed},
+                      float(np.tanh(removed)), self.name)
+
+
+@register
+class ButterLowpassNode(Node):
+    """Zero-phase Butterworth low-pass filter (smooths out high-frequency noise)."""
+    layer = "signal"
+    node_type = "butter_lowpass"
+    is_transformer = True
+
+    def __init__(self, order: int = 3, cutoff: float = 0.2, **kw):
+        super().__init__(order=order, cutoff=cutoff, **kw)
+        self.order = order
+        self.cutoff = cutoff
+
+    def _transform(self, X: np.ndarray) -> np.ndarray:
+        T = X.shape[0]
+        b, a = butter(self.order, min(0.99, max(0.01, self.cutoff)), btype="low")
+        padlen = 3 * max(len(a), len(b))
+        if T <= padlen:
+            return X.copy()
+        return filtfilt(b, a, X, axis=0)
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        clean = self._transform(X)
+        resid = X - clean
+        snr = float(np.var(clean) / (np.var(resid) + 1e-9))
+        return Belief("signal",
+                      {"series": clean.tolist(), "mean_abs_change": float(np.mean(np.abs(resid)))},
+                      float(snr / (1 + snr)), self.name)
+
+
+@register
+class WelchPSDNode(Node):
+    """Welch power-spectral-density estimate of feature 0 (smoother than a raw FFT)."""
+    layer = "signal"
+    node_type = "welch_psd"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        x = X[:, 0]
+        nper = int(min(len(x), max(8, len(x) // 4)))
+        freqs, psd = welch(x, nperseg=nper)
+        if len(psd) > 1 and psd[1:].sum() > 0:
+            k = int(np.argmax(psd[1:]) + 1)
+            dom = float(freqs[k])
+            conc = float(psd[k] / (psd.sum() + 1e-12))
+        else:
+            dom, conc = 0.0, 0.0
+        return Belief("spectral",
+                      {"dominant_freq": dom, "energy": float(psd.sum()),
+                       "spectrum": psd.tolist()},
+                      conc, self.name)

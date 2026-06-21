@@ -109,3 +109,53 @@ class QLearningNode(Node):
         return Belief("action",
                       {"state": st, "action": action, "q_values": q.tolist()},
                       float(p.max()), self.name)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a) — more bandit policies (Block 42 RL; bandit family).
+# --------------------------------------------------------------------------
+@register
+class ThompsonSamplingBanditNode(Node):
+    """Thompson-sampling bandit over the D columns (arms): sample each arm's mean
+    from a Gaussian posterior and pick the argmax (Bayesian exploration)."""
+    layer = "rl"
+    node_type = "thompson_bandit"
+
+    def __init__(self, random_state: int = 0, **kw):
+        super().__init__(random_state=random_state, **kw)
+        self.random_state = random_state
+
+    def _fit(self, X, y=None):
+        self._means = X.mean(axis=0)
+        self._sd = X.std(axis=0) / np.sqrt(max(1, X.shape[0]))
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        rng = np.random.default_rng(self.random_state)
+        samples = rng.normal(self._means, self._sd + 1e-9)
+        arm = int(np.argmax(samples))
+        e = np.exp(self._means - self._means.max())
+        p = e / e.sum()
+        return Belief("action",
+                      {"arm": arm, "values": self._means.tolist(),
+                       "samples": samples.tolist(), "policy": "thompson"},
+                      float(p.max()), self.name)
+
+
+@register
+class GradientBanditNode(Node):
+    """Gradient (softmax-preference) bandit over the D columns (arms)."""
+    layer = "rl"
+    node_type = "gradient_bandit"
+
+    def _fit(self, X, y=None):
+        self._means = X.mean(axis=0)
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        h = self._means - self._means.mean()
+        e = np.exp(h - h.max())
+        p = e / e.sum()
+        arm = int(np.argmax(p))
+        return Belief("action",
+                      {"arm": arm, "policy": "gradient", "values": self._means.tolist(),
+                       "preferences": p.tolist()},
+                      float(p.max()), self.name)
