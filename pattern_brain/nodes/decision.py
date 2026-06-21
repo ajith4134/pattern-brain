@@ -178,3 +178,60 @@ class DecisionTreeNode(_ClassifierNode):
 
     def _make(self):
         return DecisionTreeClassifier(random_state=0)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a, batch 2) — more supervised classifiers (incl. a
+# sklearn MLP — a neural net that needs NO torch). All reuse _ClassifierNode.
+# --------------------------------------------------------------------------
+from sklearn.ensemble import ExtraTreesClassifier, AdaBoostClassifier, BaggingClassifier  # noqa: E402
+from sklearn.neural_network import MLPClassifier  # noqa: E402
+from sklearn.linear_model import RidgeClassifier  # noqa: E402
+from sklearn.discriminant_analysis import (  # noqa: E402
+    LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis,
+)
+
+
+@register
+class ExtraTreesNode(_ClassifierNode):
+    node_type = "extra_trees"
+    def _make(self): return ExtraTreesClassifier(n_estimators=100, random_state=0)
+
+
+@register
+class AdaBoostNode(_ClassifierNode):
+    node_type = "adaboost"
+    def _make(self): return AdaBoostClassifier(random_state=0)
+
+
+@register
+class BaggingNode(_ClassifierNode):
+    node_type = "bagging"
+    def _make(self): return BaggingClassifier(n_estimators=20, random_state=0)
+
+
+@register
+class MLPClassifierNode(_ClassifierNode):
+    """Multi-layer perceptron classifier — a neural net in the LIGHT stack
+    (sklearn, no torch); the deep-framework nets are build step 6 Phase 6b."""
+    node_type = "mlp_classifier"
+    def _make(self): return MLPClassifier(hidden_layer_sizes=(32,), max_iter=400, random_state=0)
+
+
+@register
+class RidgeClassifierNode(_ClassifierNode):
+    """Ridge (least-squares) classifier — no predict_proba (confidence is fixed)."""
+    node_type = "ridge_classifier"
+    def _make(self): return RidgeClassifier()
+
+
+@register
+class LDANode(_ClassifierNode):
+    node_type = "lda"
+    def _make(self): return LinearDiscriminantAnalysis()
+
+
+@register
+class QDANode(_ClassifierNode):
+    node_type = "qda"
+    def _make(self): return QuadraticDiscriminantAnalysis()

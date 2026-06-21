@@ -309,3 +309,76 @@ class ThetaForecastNode(Node):
         nxt = np.array(nxt_cols)
         resid = float(np.std(X)) / (abs(float(np.mean(X))) + 1.0)
         return _forecast_belief(nxt, resid, self.name)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a, batch 2) — ML autoregressive forecasters. Each builds
+# a lag-embedding per feature and fits a regressor to predict the next step.
+# --------------------------------------------------------------------------
+from sklearn.svm import SVR  # noqa: E402
+from sklearn.neighbors import KNeighborsRegressor  # noqa: E402
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor  # noqa: E402
+from sklearn.kernel_ridge import KernelRidge  # noqa: E402
+
+
+class _ARRegressorForecaster(Node):
+    """Base: per-feature lag-embedding autoregression with a sklearn regressor."""
+    layer = "sequence"
+
+    def __init__(self, lag: int = 5, **kw):
+        super().__init__(lag=lag, **kw)
+        self.lag = lag
+
+    def _make(self):  # pragma: no cover - overridden
+        raise NotImplementedError
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        T, D = X.shape
+        p = max(1, min(self.lag, max(1, T // 4)))
+        nexts, r2s = [], []
+        for j in range(D):
+            y = X[:, j]
+            if T <= p + 1:
+                nexts.append(float(y[-1])); continue
+            Xl = np.array([y[t - p:t] for t in range(p, T)])
+            yl = y[p:T]
+            try:
+                m = self._make().fit(Xl, yl)
+                nexts.append(float(m.predict(y[T - p:T].reshape(1, -1))[0]))
+                r2s.append(float(max(0.0, m.score(Xl, yl))))
+            except Exception:
+                nexts.append(float(y[-1]))
+        conf = float(np.mean(r2s)) if r2s else 0.0
+        return _forecast_belief(np.array(nexts), 1.0 / (conf + 1e-9) - 1.0
+                                if conf > 0 else 5.0, self.name,
+                                extra={"r2": conf, "lag": p})
+
+
+@register
+class SVRForecastNode(_ARRegressorForecaster):
+    node_type = "svr_forecast"
+    def _make(self): return SVR(gamma="scale")
+
+
+@register
+class KNNForecastNode(_ARRegressorForecaster):
+    node_type = "knn_forecast"
+    def _make(self): return KNeighborsRegressor(n_neighbors=3)
+
+
+@register
+class RFForecastNode(_ARRegressorForecaster):
+    node_type = "rf_forecast"
+    def _make(self): return RandomForestRegressor(n_estimators=50, random_state=0)
+
+
+@register
+class GBRForecastNode(_ARRegressorForecaster):
+    node_type = "gbr_forecast"
+    def _make(self): return GradientBoostingRegressor(random_state=0)
+
+
+@register
+class KernelRidgeForecastNode(_ARRegressorForecaster):
+    node_type = "kernel_ridge_forecast"
+    def _make(self): return KernelRidge(kernel="rbf")

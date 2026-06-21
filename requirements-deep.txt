@@ -1,0 +1,5 @@
+# Pattern Brain — build step 6 Phase 6b (deep / PyTorch nodes) dependency.
+# OPTIONAL: the light bank (requirements.txt) works without this. Installing it
+# makes pattern_brain/nodes/deep.py register its deep nodes automatically.
+# CPU wheel is enough:  pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.2

@@ -189,3 +189,35 @@ class TheilSenNode(_LinearLawNode):
 
     def _make(self):
         return TheilSenRegressor(random_state=0, max_subpopulation=2000)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a, batch 2) — more linear laws with closed-form coef_.
+# All reuse the _LinearLawNode base (feature 0 vs the time index).
+# --------------------------------------------------------------------------
+from sklearn.linear_model import Lars, LassoLars, OrthogonalMatchingPursuit, ARDRegression  # noqa: E402
+
+
+@register
+class LarsNode(_LinearLawNode):
+    node_type = "lars_regression"
+    def _make(self): return Lars()
+
+
+@register
+class LassoLarsNode(_LinearLawNode):
+    node_type = "lasso_lars_regression"
+    def _make(self): return LassoLars(alpha=0.01)
+
+
+@register
+class OMPNode(_LinearLawNode):
+    node_type = "omp_regression"
+    def _make(self): return OrthogonalMatchingPursuit()
+
+
+@register
+class ARDNode(_LinearLawNode):
+    """Automatic Relevance Determination (sparse Bayesian) linear law."""
+    node_type = "ard_regression"
+    def _make(self): return ARDRegression()

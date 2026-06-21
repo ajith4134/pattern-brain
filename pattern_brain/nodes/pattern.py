@@ -212,3 +212,48 @@ class OPTICSNode(Node):
                       {"labels": labels.tolist(), "n_clusters": int(n),
                        "n_noise": int((labels == -1).sum())},
                       _silhouette_conf(X, labels), self.name)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a, batch 2) — scalable k-means variants.
+# --------------------------------------------------------------------------
+from sklearn.cluster import MiniBatchKMeans, BisectingKMeans  # noqa: E402
+
+
+@register
+class MiniBatchKMeansNode(Node):
+    """Mini-batch K-Means (scales to large streams; approximate K-Means)."""
+    layer = "pattern"
+    node_type = "minibatch_kmeans"
+
+    def __init__(self, n_clusters: int = 3, random_state: int = 0, **kw):
+        super().__init__(n_clusters=n_clusters, random_state=random_state, **kw)
+        self.n_clusters = n_clusters
+        self.random_state = random_state
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        k = max(1, min(self.n_clusters, X.shape[0]))
+        labels = MiniBatchKMeans(n_clusters=k, n_init=3,
+                                 random_state=self.random_state).fit_predict(X)
+        return Belief("cluster", {"labels": labels.tolist(),
+                                  "n_clusters": int(len(set(labels)))},
+                      _silhouette_conf(X, labels), self.name)
+
+
+@register
+class BisectingKMeansNode(Node):
+    """Bisecting (divisive hierarchical) K-Means."""
+    layer = "pattern"
+    node_type = "bisecting_kmeans"
+
+    def __init__(self, n_clusters: int = 3, random_state: int = 0, **kw):
+        super().__init__(n_clusters=n_clusters, random_state=random_state, **kw)
+        self.n_clusters = n_clusters
+        self.random_state = random_state
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        k = max(2, min(self.n_clusters, X.shape[0]))
+        labels = BisectingKMeans(n_clusters=k, random_state=self.random_state).fit_predict(X)
+        return Belief("cluster", {"labels": labels.tolist(),
+                                  "n_clusters": int(len(set(labels)))},
+                      _silhouette_conf(X, labels), self.name)

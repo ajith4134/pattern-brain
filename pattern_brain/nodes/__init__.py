@@ -10,3 +10,4 @@ from . import probability # noqa: F401
 from . import equation    # noqa: F401
 from . import decision    # noqa: F401
 from . import rl          # noqa: F401
+from . import deep        # noqa: F401  (deep/PyTorch nodes — only register if torch is installed)

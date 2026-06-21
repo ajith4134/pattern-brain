@@ -159,3 +159,45 @@ class GradientBanditNode(Node):
                       {"arm": arm, "policy": "gradient", "values": self._means.tolist(),
                        "preferences": p.tolist()},
                       float(p.max()), self.name)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a, batch 2) — baseline policies (Block 42 RL).
+# --------------------------------------------------------------------------
+@register
+class RandomPolicyNode(Node):
+    """Uniform-random arm choice — the honest baseline every policy must beat."""
+    layer = "rl"
+    node_type = "random_policy"
+
+    def __init__(self, random_state: int = 0, **kw):
+        super().__init__(random_state=random_state, **kw)
+        self.random_state = random_state
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        rng = np.random.default_rng(self.random_state)
+        arm = int(rng.integers(X.shape[1]))
+        return Belief("action", {"arm": arm, "policy": "random",
+                                 "values": X.mean(axis=0).tolist()},
+                      float(1.0 / X.shape[1]), self.name)
+
+
+@register
+class SoftmaxPolicyNode(Node):
+    """Softmax (Boltzmann) policy over the D columns' mean rewards, temperature τ."""
+    layer = "rl"
+    node_type = "softmax_policy"
+
+    def __init__(self, tau: float = 1.0, **kw):
+        super().__init__(tau=tau, **kw)
+        self.tau = tau
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        m = X.mean(axis=0)
+        z = m / max(1e-9, self.tau)
+        e = np.exp(z - z.max())
+        p = e / e.sum()
+        arm = int(np.argmax(p))
+        return Belief("action", {"arm": arm, "policy": "softmax",
+                                 "probabilities": p.tolist(), "values": m.tolist()},
+                      float(p.max()), self.name)

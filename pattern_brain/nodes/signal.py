@@ -173,3 +173,89 @@ class WelchPSDNode(Node):
                       {"dominant_freq": dom, "energy": float(psd.sum()),
                        "spectrum": psd.tolist()},
                       conc, self.name)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a, batch 2) — more transforms + a periodogram.
+# --------------------------------------------------------------------------
+from scipy.signal import periodogram as _periodogram  # noqa: E402
+
+
+@register
+class ZScoreNormalizeNode(Node):
+    """Standardize each feature to zero-mean/unit-variance (a generic rescaler)."""
+    layer = "signal"
+    node_type = "zscore_normalize"
+    is_transformer = True
+
+    def _transform(self, X: np.ndarray) -> np.ndarray:
+        mu = X.mean(axis=0)
+        sd = X.std(axis=0) + 1e-9
+        return (X - mu) / sd
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        out = self._transform(X)
+        return Belief("signal", {"series": out.tolist(),
+                                 "mean_abs_change": float(np.mean(np.abs(out - X)))},
+                      0.5, self.name)
+
+
+@register
+class EWMANode(Node):
+    """Exponentially-weighted moving average (recency-weighted smoother)."""
+    layer = "signal"
+    node_type = "ewma"
+    is_transformer = True
+
+    def __init__(self, alpha: float = 0.3, **kw):
+        super().__init__(alpha=alpha, **kw)
+        self.alpha = alpha
+
+    def _transform(self, X: np.ndarray) -> np.ndarray:
+        a = self.alpha
+        out = np.empty_like(X, dtype=float)
+        out[0] = X[0]
+        for t in range(1, X.shape[0]):
+            out[t] = a * X[t] + (1 - a) * out[t - 1]
+        return out
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        out = self._transform(X)
+        resid = float(np.mean(np.abs(X - out)))
+        snr = float(np.var(out) / (np.var(X - out) + 1e-9))
+        return Belief("signal", {"series": out.tolist(), "mean_abs_change": resid},
+                      float(snr / (1 + snr)), self.name)
+
+
+@register
+class CumSumNode(Node):
+    """Cumulative sum (integrate the sequence) — the inverse of differencing."""
+    layer = "signal"
+    node_type = "cumsum"
+    is_transformer = True
+
+    def _transform(self, X: np.ndarray) -> np.ndarray:
+        return np.cumsum(X, axis=0)
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        out = self._transform(X)
+        return Belief("signal", {"series": out.tolist(),
+                                 "mean_abs_change": float(np.mean(np.abs(np.diff(out, axis=0)))) if X.shape[0] > 1 else 0.0},
+                      0.5, self.name)
+
+
+@register
+class PeriodogramNode(Node):
+    """Classical periodogram power-spectral estimate of feature 0."""
+    layer = "signal"
+    node_type = "periodogram"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        f, pxx = _periodogram(X[:, 0])
+        if len(pxx) > 1 and pxx[1:].sum() > 0:
+            k = int(np.argmax(pxx[1:]) + 1)
+            dom = float(f[k]); conc = float(pxx[k] / (pxx.sum() + 1e-12))
+        else:
+            dom, conc = 0.0, 0.0
+        return Belief("spectral", {"dominant_freq": dom, "energy": float(pxx.sum()),
+                                   "spectrum": pxx.tolist()}, conc, self.name)

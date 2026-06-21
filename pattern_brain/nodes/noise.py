@@ -269,3 +269,95 @@ class KernelPCADenoiseNode(_ReconDenoiser):
     def _make(self, k):
         return KernelPCA(n_components=k, kernel="rbf", fit_inverse_transform=True,
                          gamma=None, random_state=0)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a, batch 2) — more statistical anomaly detectors.
+# --------------------------------------------------------------------------
+from sklearn.neighbors import NearestNeighbors  # noqa: E402
+
+
+@register
+class MADAnomalyNode(Node):
+    """Robust median-absolute-deviation outlier flags (per-step, across features)."""
+    layer = "noise"
+    node_type = "mad_anomaly"
+
+    def __init__(self, threshold: float = 3.5, **kw):
+        super().__init__(threshold=threshold, **kw)
+        self.threshold = threshold
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        med = np.median(X, axis=0)
+        mad = np.median(np.abs(X - med), axis=0) + 1e-9
+        score = (0.6745 * np.abs(X - med) / mad).max(axis=1)
+        flags = (score > self.threshold).astype(int)
+        return _anomaly_belief(flags, score, self.name)
+
+
+@register
+class IQRAnomalyNode(Node):
+    """Interquartile-range (Tukey fence) outlier flags."""
+    layer = "noise"
+    node_type = "iqr_anomaly"
+
+    def __init__(self, k: float = 1.5, **kw):
+        super().__init__(k=k, **kw)
+        self.k = k
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        q1 = np.percentile(X, 25, axis=0)
+        q3 = np.percentile(X, 75, axis=0)
+        iqr = (q3 - q1) + 1e-9
+        lo, hi = q1 - self.k * iqr, q3 + self.k * iqr
+        out = (X < lo) | (X > hi)
+        flags = out.any(axis=1).astype(int)
+        score = np.maximum((lo - X) / iqr, (X - hi) / iqr).max(axis=1)
+        score = np.clip(score, 0, None)
+        return _anomaly_belief(flags, score, self.name)
+
+
+@register
+class MahalanobisAnomalyNode(Node):
+    """Mahalanobis-distance outlier flags (accounts for feature covariance)."""
+    layer = "noise"
+    node_type = "mahalanobis_anomaly"
+
+    def __init__(self, quantile: float = 0.975, **kw):
+        super().__init__(quantile=quantile, **kw)
+        self.quantile = quantile
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        mu = X.mean(axis=0)
+        cov = np.cov(X, rowvar=False)
+        cov = np.atleast_2d(cov)
+        try:
+            inv = np.linalg.pinv(cov)
+        except np.linalg.LinAlgError:
+            inv = np.eye(X.shape[1])
+        d = X - mu
+        score = np.sqrt(np.einsum("ij,jk,ik->i", d, inv, d))
+        thr = float(np.quantile(score, self.quantile))
+        flags = (score > thr).astype(int)
+        return _anomaly_belief(flags, score, self.name)
+
+
+@register
+class KNNDistanceAnomalyNode(Node):
+    """k-NN mean-distance outlier score (distance-based anomaly detection)."""
+    layer = "noise"
+    node_type = "knn_distance_anomaly"
+
+    def __init__(self, n_neighbors: int = 5, quantile: float = 0.95, **kw):
+        super().__init__(n_neighbors=n_neighbors, quantile=quantile, **kw)
+        self.n_neighbors = n_neighbors
+        self.quantile = quantile
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        k = max(1, min(self.n_neighbors, X.shape[0] - 1))
+        nn = NearestNeighbors(n_neighbors=k + 1).fit(X)
+        dist, _ = nn.kneighbors(X)
+        score = dist[:, 1:].mean(axis=1)  # exclude self (distance 0)
+        thr = float(np.quantile(score, self.quantile))
+        flags = (score > thr).astype(int)
+        return _anomaly_belief(flags, score, self.name)
