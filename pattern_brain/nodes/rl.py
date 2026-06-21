@@ -201,3 +201,51 @@ class SoftmaxPolicyNode(Node):
         return Belief("action", {"arm": arm, "policy": "softmax",
                                  "probabilities": p.tolist(), "values": m.tolist()},
                       float(p.max()), self.name)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a, batch 3) — non-stationary / adversarial bandits.
+# --------------------------------------------------------------------------
+@register
+class DiscountedUCBNode(Node):
+    """Discounted-UCB bandit — UCB1 with geometric forgetting, for non-stationary
+    rewards (the Sliding-Window/Discounted-UCB family the evaluator adopts)."""
+    layer = "rl"
+    node_type = "discounted_ucb"
+
+    def __init__(self, gamma: float = 0.95, **kw):
+        super().__init__(gamma=gamma, **kw)
+        self.gamma = gamma
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        T, D = X.shape
+        w = self.gamma ** np.arange(T)[::-1]        # recent rows weigh more
+        wsum = w.sum() + 1e-9
+        means = (w[:, None] * X).sum(axis=0) / wsum
+        ucb = means + np.sqrt(2 * np.log(max(2.0, wsum)) / wsum) * np.ones(D)
+        arm = int(np.argmax(ucb))
+        scale = np.abs(means).max() + 1e-9
+        return Belief("action", {"arm": arm, "ucb": ucb.tolist(),
+                                 "values": means.tolist(), "policy": "discounted_ucb"},
+                      float(min(1.0, max(0.0, means.max() / scale))), self.name)
+
+
+@register
+class EXP3BanditNode(Node):
+    """EXP3 adversarial bandit — exponential-weights over the D arms."""
+    layer = "rl"
+    node_type = "exp3_bandit"
+
+    def __init__(self, eta: float = 0.1, **kw):
+        super().__init__(eta=eta, **kw)
+        self.eta = eta
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        rewards = X.mean(axis=0)
+        r = (rewards - rewards.min()) / (np.ptp(rewards) + 1e-9)   # normalize to [0,1]
+        w = np.exp(self.eta * np.cumsum(np.ones_like(r)) * 0 + self.eta * r)
+        p = w / w.sum()
+        arm = int(np.argmax(p))
+        return Belief("action", {"arm": arm, "policy": "exp3",
+                                 "probabilities": p.tolist(), "values": rewards.tolist()},
+                      float(p.max()), self.name)

@@ -361,3 +361,53 @@ class KNNDistanceAnomalyNode(Node):
         thr = float(np.quantile(score, self.quantile))
         flags = (score > thr).astype(int)
         return _anomaly_belief(flags, score, self.name)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a, batch 3) — reconstruction- and histogram-based anomaly.
+# --------------------------------------------------------------------------
+@register
+class PCAResidualAnomalyNode(Node):
+    """Flag rows poorly reconstructed by a low-rank PCA model (subspace anomaly)."""
+    layer = "noise"
+    node_type = "pca_residual_anomaly"
+
+    def __init__(self, n_components: int = 1, quantile: float = 0.95, **kw):
+        super().__init__(n_components=n_components, quantile=quantile, **kw)
+        self.n_components = n_components
+        self.quantile = quantile
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        if X.shape[1] < 2:
+            score = np.abs(X[:, 0] - X[:, 0].mean())
+        else:
+            k = max(1, min(self.n_components, X.shape[1] - 1))
+            p = PCA(n_components=k).fit(X)
+            recon = p.inverse_transform(p.transform(X))
+            score = np.abs(X - recon).mean(axis=1)
+        thr = float(np.quantile(score, self.quantile))
+        flags = (score > thr).astype(int)
+        return _anomaly_belief(flags, score, self.name)
+
+
+@register
+class HistogramAnomalyNode(Node):
+    """Histogram-based outlier score (HBOS-style): low-density bins per feature."""
+    layer = "noise"
+    node_type = "histogram_anomaly"
+
+    def __init__(self, bins: int = 10, quantile: float = 0.95, **kw):
+        super().__init__(bins=bins, quantile=quantile, **kw)
+        self.bins = bins
+        self.quantile = quantile
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        score = np.zeros(X.shape[0])
+        for j in range(X.shape[1]):
+            hist, edges = np.histogram(X[:, j], bins=min(self.bins, X.shape[0]), density=True)
+            idx = np.clip(np.digitize(X[:, j], edges[1:-1]), 0, len(hist) - 1)
+            dens = hist[idx] + 1e-9
+            score += -np.log(dens)
+        thr = float(np.quantile(score, self.quantile))
+        flags = (score > thr).astype(int)
+        return _anomaly_belief(flags, score, self.name)

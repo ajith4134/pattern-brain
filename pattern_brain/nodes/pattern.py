@@ -257,3 +257,47 @@ class BisectingKMeansNode(Node):
         return Belief("cluster", {"labels": labels.tolist(),
                                   "n_clusters": int(len(set(labels)))},
                       _silhouette_conf(X, labels), self.name)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a, batch 3) — exemplar + Bayesian clustering.
+# --------------------------------------------------------------------------
+from sklearn.cluster import AffinityPropagation  # noqa: E402
+from sklearn.mixture import BayesianGaussianMixture  # noqa: E402
+
+
+@register
+class AffinityPropagationNode(Node):
+    """Affinity Propagation — exemplar-based clustering (no preset cluster count)."""
+    layer = "pattern"
+    node_type = "affinity_propagation"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        try:
+            labels = AffinityPropagation(random_state=0).fit_predict(X)
+        except Exception:
+            labels = np.zeros(X.shape[0], dtype=int)
+        return Belief("cluster", {"labels": labels.tolist(),
+                                  "n_clusters": int(len(set(labels)))},
+                      _silhouette_conf(X, labels), self.name)
+
+
+@register
+class BayesianGaussianMixtureNode(Node):
+    """Variational Bayesian GMM — soft clustering that prunes unneeded components."""
+    layer = "pattern"
+    node_type = "bayesian_gaussian_mixture"
+
+    def __init__(self, n_components: int = 5, random_state: int = 0, **kw):
+        super().__init__(n_components=n_components, random_state=random_state, **kw)
+        self.n_components = n_components
+        self.random_state = random_state
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        k = max(1, min(self.n_components, X.shape[0]))
+        m = BayesianGaussianMixture(n_components=k, random_state=self.random_state,
+                                    max_iter=200).fit(X)
+        labels = m.predict(X)
+        return Belief("cluster", {"labels": labels.tolist(),
+                                  "n_clusters": int(len(set(labels)))},
+                      _silhouette_conf(X, labels), self.name)

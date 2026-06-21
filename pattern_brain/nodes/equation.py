@@ -221,3 +221,24 @@ class ARDNode(_LinearLawNode):
     """Automatic Relevance Determination (sparse Bayesian) linear law."""
     node_type = "ard_regression"
     def _make(self): return ARDRegression()
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a, batch 3) — quantile + margin linear laws.
+# --------------------------------------------------------------------------
+from sklearn.linear_model import QuantileRegressor  # noqa: E402
+from sklearn.svm import LinearSVR  # noqa: E402
+
+
+@register
+class QuantileRegressionNode(_LinearLawNode):
+    """Median (quantile) regression — robust to asymmetric noise."""
+    node_type = "quantile_regression"
+    def _make(self): return QuantileRegressor(quantile=0.5, alpha=0.0, solver="highs")
+
+
+@register
+class LinearSVRNode(_LinearLawNode):
+    """Linear support-vector regression (epsilon-insensitive linear law)."""
+    node_type = "linear_svr"
+    def _make(self): return LinearSVR(max_iter=5000)

@@ -982,3 +982,31 @@ Owner: "continue Phase 6a (more light-stack nodes toward the ~120–150 target),
 **Concrete opinion (Rule 10):** the right way to add a heavyweight framework to this project is as an **optional, defensively-imported node module**, not a core requirement — it keeps the light bank fast and torch-free for anyone who doesn't want a 2 GB dependency, while the dashboard's `.venv` (which carries torch) lights up the deep nodes automatically. Bank is now **94 active** (88 light + 6 deep): real progress toward ~120–150, with whole deep categories still untouched (true SSM/Mamba, GNN, deep-RL, PINN, deep generative) as future Phase-6b batches. Notably, several "neural" capabilities are already covered light (sklearn MLP classifier) — reinforcing the plan's recurring finding that bank breadth was never the hard part.
 
 Rules applied: 1, 2, 4, 9, 10, 13, 14, 16, 18, 19 (imported discipline), 20, 21, 22, 23, 24, 25.
+
+## BLOCK 49 — Step 6: reached the ~120–150 target band (bank 94 → 123) (2026-06-21)
+
+Owner: "keep filling toward ~120–150 (more deep categories and/or light gaps)." Did both, landing at **123 active (112 light + 11 deep)** — inside the target band.
+
+**Light +24 (88 → 112), all reusing the v0.1 interlingua types (no catalog change):**
+- signal/spectral: median_filter, gaussian_smooth, wiener_denoise, hp_filter (Hodrick-Prescott trend), spectral_entropy, autocorr_period.
+- anomaly: pca_residual_anomaly, histogram_anomaly (HBOS-style), kde_anomaly (probability layer, gaussian KDE).
+- clustering: affinity_propagation, bayesian_gaussian_mixture.
+- forecasters (lag-embedding AR): extra_trees, adaboost, ridge, mlp_regressor (a second light sklearn neural net), + seasonal_naive (autocorr-detected period).
+- linear laws: quantile_regression, linear_svr.
+- classifiers: hist_gradient_boosting, nearest_centroid, sgd_classifier, passive_aggressive_classifier.
+- bandits: discounted_ucb, exp3 (the non-stationary/adversarial families the evaluator design references).
+
+**Deep +5 (6 → 11) — broadened beyond the first forecaster/autoencoder set into new Block-42 categories:**
+- `mlp_deep_forecaster` (feed-forward over the flattened lag window).
+- `ssm_forecaster` — a diagonal state-space recurrence (S4D-lite: h_t = a⊙h_{t-1} + Bx_t, scanned), the simplified SSM/Mamba family.
+- `vae_denoise` / `vae_anomaly` — a variational autoencoder (deep generative): reparameterized latent + ELBO, reconstruction → denoise / reconstruction-error → anomaly.
+- `gcn_denoise` — a graph-convolutional network (GNN): builds a k-NN graph over timesteps, normalized adjacency, trains a 2-layer GCN autoencoder to smooth/reconstruct rows. Implemented with plain torch (no torch_geometric dependency — message passing as Â X W).
+All behind the same Node interface, emitting existing interlingua belief types, torch still optional.
+
+**To pass `p` (window length) to the forecaster nets that need it (MLP flatten, SSM scan), the `_TorchForecaster._build` signature was widened to `_build(self, D, p)`** and the existing LSTM/GRU/Transformer/TCN builders updated to accept (and ignore) it — a clean base-class change, not a per-node hack.
+
+**Evidence (Rule 25):** all suites green on BOTH interpreters (light 112 via system python3 with deep absent; full 123 via .venv with torch); interlingua confirms every new node — light and deep — conforms to v0.1; `/api/bank` returns 123; **Model Bank dashboard tab verified in a real browser rendering all 123 nodes** including ssm/vae/gcn, no JS errors. Layer spread: signal 17 / noise 21 / pattern 13 / sequence 24 / probability 5 / equation 14 / decision 20 / rl 9.
+
+**Concrete opinion (Rule 10):** the bank is now genuinely diverse across all 8 functional layers and both stacks — comfortably enough material for the Connector and the Feature-1/2/3 evolution engines to work with, which our notes have said four times over is the actual research problem (not bank size). I'd treat 123 as "enough to move on": further catalog growth (true GNN message-passing/torch_geometric, deep-RL, PINN/Neural-ODE, real Mamba/S4, foundation TS models) is genuine but has diminishing returns versus building the final phase (Features 1/2/3 + the shared evaluator), which is what actually exercises a bank of this size. Recommend the final phase next.
+
+Rules applied: 1, 2, 4, 9, 10, 18, 19 (imported discipline), 20, 21, 22, 23, 24, 25.

@@ -382,3 +382,70 @@ class GBRForecastNode(_ARRegressorForecaster):
 class KernelRidgeForecastNode(_ARRegressorForecaster):
     node_type = "kernel_ridge_forecast"
     def _make(self): return KernelRidge(kernel="rbf")
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a, batch 3) — more AR forecasters (incl. a sklearn MLP
+# regressor, a neural forecaster with NO torch) + a seasonal-naive baseline.
+# --------------------------------------------------------------------------
+from sklearn.ensemble import ExtraTreesRegressor, AdaBoostRegressor  # noqa: E402
+from sklearn.neural_network import MLPRegressor  # noqa: E402
+from sklearn.linear_model import Ridge as _Ridge  # noqa: E402
+
+
+@register
+class ExtraTreesForecastNode(_ARRegressorForecaster):
+    node_type = "extra_trees_forecast"
+    def _make(self): return ExtraTreesRegressor(n_estimators=50, random_state=0)
+
+
+@register
+class AdaBoostForecastNode(_ARRegressorForecaster):
+    node_type = "adaboost_forecast"
+    def _make(self): return AdaBoostRegressor(random_state=0)
+
+
+@register
+class RidgeForecastNode(_ARRegressorForecaster):
+    node_type = "ridge_forecast"
+    def _make(self): return _Ridge(alpha=1.0)
+
+
+@register
+class MLPForecastNode(_ARRegressorForecaster):
+    """MLP-regressor autoregressive forecaster — a neural net in the LIGHT stack
+    (sklearn, no torch); the torch deep forecasters are Phase 6b."""
+    node_type = "mlp_regressor_forecast"
+    def _make(self): return MLPRegressor(hidden_layer_sizes=(32,), max_iter=400, random_state=0)
+
+
+@register
+class SeasonalNaiveForecastNode(Node):
+    """Seasonal-naive forecast: predict the value one detected period ago
+    (autocorrelation-estimated season; falls back to last value)."""
+    layer = "sequence"
+    node_type = "seasonal_naive_forecast"
+
+    def _period(self, x: np.ndarray) -> int:
+        x = x - x.mean()
+        n = len(x)
+        if n < 4:
+            return 1
+        ac = np.correlate(x, x, mode="full")[n - 1:]
+        ac = ac / (ac[0] + 1e-12)
+        d = np.diff(ac)
+        for i in range(1, len(d)):
+            if d[i - 1] > 0 and d[i] <= 0 and i >= 2:
+                return i
+        return 1
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        T = X.shape[0]
+        per = min(self._period(X[:, 0]), T)
+        nxt = X[T - per]
+        # in-sample seasonal error -> confidence
+        if T > per:
+            err = float(np.mean(np.abs(X[per:] - X[:-per])))
+        else:
+            err = 0.0
+        return _forecast_belief(nxt, err, self.name, extra={"period": int(per)})

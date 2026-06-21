@@ -62,7 +62,7 @@ if _HAS_TORCH:
             self.epochs = epochs
             self.hidden = hidden
 
-        def _build(self, D: int):  # pragma: no cover - overridden
+        def _build(self, D: int, p: int):  # pragma: no cover - overridden
             raise NotImplementedError
 
         def _predict(self, X: np.ndarray) -> Belief:
@@ -78,7 +78,7 @@ if _HAS_TORCH:
             sd = Xw.std(dim=(0, 1), keepdim=True) + 1e-6
             Xn = (Xw - mu) / sd
             Yn = (Yw - mu.squeeze(1)) / sd.squeeze(1)
-            net = self._build(D)
+            net = self._build(D, p)
             opt = torch.optim.Adam(net.parameters(), lr=0.01)
             lossf = nn.MSELoss()
             net.train()
@@ -103,7 +103,7 @@ if _HAS_TORCH:
         """LSTM recurrent one-step forecaster (Block-42 RNN family)."""
         node_type = "lstm_forecaster"
 
-        def _build(self, D):
+        def _build(self, D, p):
             return _RecurrentNet(D, self.hidden, kind="lstm")
 
     @register
@@ -111,7 +111,7 @@ if _HAS_TORCH:
         """GRU recurrent one-step forecaster."""
         node_type = "gru_forecaster"
 
-        def _build(self, D):
+        def _build(self, D, p):
             return _RecurrentNet(D, self.hidden, kind="gru")
 
     @register
@@ -119,7 +119,7 @@ if _HAS_TORCH:
         """Transformer-encoder one-step forecaster (attention over the window)."""
         node_type = "transformer_forecaster"
 
-        def _build(self, D):
+        def _build(self, D, p):
             return _TransformerNet(D, self.hidden)
 
     @register
@@ -127,7 +127,7 @@ if _HAS_TORCH:
         """Temporal Convolutional Network forecaster (dilated 1-D convolutions)."""
         node_type = "tcn_forecaster"
 
-        def _build(self, D):
+        def _build(self, D, p):
             return _TCNNet(D, self.hidden)
 
     @register
@@ -257,3 +257,182 @@ if _HAS_TORCH:
                       {"next_vector": next_vec.tolist(), "estimate": float(next_vec[0]),
                        "train_loss": float(loss), "lag": int(lag)},
                       max(0.0, min(1.0, conf)), name)
+
+
+# ==========================================================================
+# Build step 6 (Phase 6b, batch 2) — more deep categories: feed-forward + a
+# diagonal state-space (S4D-lite) forecaster, a variational autoencoder
+# (deep generative) denoiser/anomaly, and a graph-conv (GNN) denoiser.
+# Re-enters the torch guard so nothing is defined when torch is absent.
+# ==========================================================================
+if _HAS_TORCH:
+
+    @register
+    class MLPForecastNode(_TorchForecaster):
+        """Feed-forward MLP forecaster over the flattened lag window (deep, torch)."""
+        node_type = "mlp_deep_forecaster"
+
+        def _build(self, D, p):
+            return _MLPNet(D, p, self.hidden)
+
+    @register
+    class SSMForecastNode(_TorchForecaster):
+        """Diagonal state-space (S4D-lite) forecaster — a learned linear recurrence
+        scanned over the window (the SSM/Mamba family, simplified)."""
+        node_type = "ssm_forecaster"
+
+        def _build(self, D, p):
+            return _DiagSSMNet(D, self.hidden)
+
+    @register
+    class VAEDenoiseNode(Node):
+        """Variational-autoencoder reconstruction denoiser (deep generative)."""
+        layer = "noise"
+        node_type = "vae_denoise"
+        is_transformer = True
+
+        def __init__(self, hidden: int = 8, latent: int = 2, epochs: int = 150, **kw):
+            super().__init__(hidden=hidden, latent=latent, epochs=epochs, **kw)
+            self.hidden = hidden; self.latent = latent; self.epochs = epochs
+            self._recon = None
+
+        def _fit(self, X, y=None):
+            self._recon = _vae(X, self.hidden, self.latent, self.epochs)
+
+        def _transform(self, X: np.ndarray) -> np.ndarray:
+            if self._recon is None or self._recon.shape != X.shape:
+                self._recon = _vae(X, self.hidden, self.latent, self.epochs)
+            return self._recon
+
+        def _predict(self, X: np.ndarray) -> Belief:
+            clean = self._transform(X)
+            resid = float(np.mean(np.abs(X - clean)))
+            denom = float(np.mean(np.abs(X))) + 1e-9
+            return Belief("denoised", {"series": clean.tolist(), "residual": resid},
+                          float(max(0.0, 1.0 - resid / denom)), self.name)
+
+    @register
+    class VAEAnomalyNode(Node):
+        """VAE reconstruction-error anomaly detector (deep generative)."""
+        layer = "noise"
+        node_type = "vae_anomaly"
+
+        def __init__(self, hidden: int = 8, latent: int = 2, epochs: int = 150,
+                     quantile: float = 0.95, **kw):
+            super().__init__(hidden=hidden, latent=latent, epochs=epochs,
+                             quantile=quantile, **kw)
+            self.hidden = hidden; self.latent = latent
+            self.epochs = epochs; self.quantile = quantile
+
+        def _predict(self, X: np.ndarray) -> Belief:
+            recon = _vae(X, self.hidden, self.latent, self.epochs)
+            score = np.abs(X - recon).mean(axis=1)
+            thr = float(np.quantile(score, self.quantile))
+            flags = (score > thr).astype(int)
+            frac = float(flags.mean())
+            return Belief("anomaly",
+                          {"n_anomalies": int(flags.sum()), "fraction": frac,
+                           "scores": score.tolist(), "flags": flags.tolist()},
+                          float(min(1.0, frac * 3)), self.name)
+
+    @register
+    class GCNDenoiseNode(Node):
+        """Graph-convolutional-network denoiser (GNN): smooth rows over a k-NN
+        graph of timesteps via a trained 2-layer GCN autoencoder."""
+        layer = "noise"
+        node_type = "gcn_denoise"
+        is_transformer = True
+
+        def __init__(self, hidden: int = 8, k: int = 5, epochs: int = 100, **kw):
+            super().__init__(hidden=hidden, k=k, epochs=epochs, **kw)
+            self.hidden = hidden; self.k = k; self.epochs = epochs
+            self._recon = None
+
+        def _fit(self, X, y=None):
+            self._recon = _gcn_denoise(X, self.hidden, self.k, self.epochs)
+
+        def _transform(self, X: np.ndarray) -> np.ndarray:
+            if self._recon is None or self._recon.shape != X.shape:
+                self._recon = _gcn_denoise(X, self.hidden, self.k, self.epochs)
+            return self._recon
+
+        def _predict(self, X: np.ndarray) -> Belief:
+            clean = self._transform(X)
+            resid = float(np.mean(np.abs(X - clean)))
+            denom = float(np.mean(np.abs(X))) + 1e-9
+            return Belief("denoised", {"series": clean.tolist(), "residual": resid},
+                          float(max(0.0, 1.0 - resid / denom)), self.name)
+
+    # ------------------------------------------------------------------ nets
+    class _MLPNet(nn.Module):
+        def __init__(self, D, p, hidden):
+            super().__init__()
+            self.net = nn.Sequential(
+                nn.Flatten(), nn.Linear(p * D, hidden), nn.ReLU(),
+                nn.Linear(hidden, hidden), nn.ReLU(), nn.Linear(hidden, D))
+
+        def forward(self, x):                 # x: (B, p, D)
+            return self.net(x)
+
+    class _DiagSSMNet(nn.Module):
+        """Diagonal linear recurrence h_t = a*h_{t-1} + B x_t ; y = C h_T + Dx_T."""
+        def __init__(self, D, hidden):
+            super().__init__()
+            self.loga = nn.Parameter(torch.zeros(hidden))   # a = sigmoid(loga) in (0,1)
+            self.B = nn.Linear(D, hidden, bias=False)
+            self.C = nn.Linear(hidden, D)
+            self.skip = nn.Linear(D, D)
+
+        def forward(self, x):                 # x: (B, p, D)
+            a = torch.sigmoid(self.loga)
+            h = torch.zeros(x.shape[0], a.shape[0])
+            for t in range(x.shape[1]):
+                h = a * h + self.B(x[:, t, :])
+            return self.C(h) + self.skip(x[:, -1, :])
+
+    def _vae(X, hidden, latent, epochs):
+        _seed()
+        D = X.shape[1]
+        mu_ = X.mean(0); sd_ = X.std(0) + 1e-6
+        Xn = torch.tensor((X - mu_) / sd_, dtype=torch.float32)
+        lat = max(1, min(latent, D))
+        enc = nn.Sequential(nn.Linear(D, hidden), nn.ReLU())
+        fmu = nn.Linear(hidden, lat); flv = nn.Linear(hidden, lat)
+        dec = nn.Sequential(nn.Linear(lat, hidden), nn.ReLU(), nn.Linear(hidden, D))
+        params = (list(enc.parameters()) + list(fmu.parameters())
+                  + list(flv.parameters()) + list(dec.parameters()))
+        opt = torch.optim.Adam(params, lr=0.01)
+        for _ in range(epochs):
+            opt.zero_grad()
+            h = enc(Xn); m = fmu(h); lv = torch.clamp(flv(h), -8, 8)
+            z = m + torch.exp(0.5 * lv) * torch.randn_like(m)
+            recon = dec(z)
+            loss = ((recon - Xn) ** 2).mean() - 0.0005 * torch.mean(1 + lv - m ** 2 - lv.exp())
+            loss.backward(); opt.step()
+        with torch.no_grad():
+            recon = dec(fmu(enc(Xn))).numpy() * sd_ + mu_
+        return recon
+
+    def _gcn_denoise(X, hidden, k, epochs):
+        _seed()
+        from sklearn.neighbors import kneighbors_graph
+        T, D = X.shape
+        kk = max(1, min(k, T - 1))
+        A = kneighbors_graph(X, kk, mode="connectivity", include_self=True).toarray()
+        A = np.maximum(A, A.T)
+        deg = A.sum(1)
+        dinv = np.diag(1.0 / np.sqrt(deg + 1e-9))
+        Ah = torch.tensor(dinv @ A @ dinv, dtype=torch.float32)
+        mu_ = X.mean(0); sd_ = X.std(0) + 1e-6
+        Xt = torch.tensor((X - mu_) / sd_, dtype=torch.float32)
+        W1 = nn.Linear(D, hidden); W2 = nn.Linear(hidden, D)
+        opt = torch.optim.Adam(list(W1.parameters()) + list(W2.parameters()), lr=0.01)
+        for _ in range(epochs):
+            opt.zero_grad()
+            H = torch.relu(Ah @ W1(Xt))
+            Xr = Ah @ W2(H)
+            loss = ((Xr - Xt) ** 2).mean()
+            loss.backward(); opt.step()
+        with torch.no_grad():
+            recon = (Ah @ W2(torch.relu(Ah @ W1(Xt)))).numpy() * sd_ + mu_
+        return recon

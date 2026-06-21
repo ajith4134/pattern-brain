@@ -235,3 +235,36 @@ class LDANode(_ClassifierNode):
 class QDANode(_ClassifierNode):
     node_type = "qda"
     def _make(self): return QuadraticDiscriminantAnalysis()
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a, batch 3) — more classifiers.
+# --------------------------------------------------------------------------
+from sklearn.ensemble import HistGradientBoostingClassifier  # noqa: E402
+from sklearn.neighbors import NearestCentroid  # noqa: E402
+from sklearn.linear_model import SGDClassifier, PassiveAggressiveClassifier  # noqa: E402
+
+
+@register
+class HistGradientBoostingNode(_ClassifierNode):
+    node_type = "hist_gradient_boosting"
+    def _make(self): return HistGradientBoostingClassifier(random_state=0)
+
+
+@register
+class NearestCentroidNode(_ClassifierNode):
+    node_type = "nearest_centroid"
+    def _make(self): return NearestCentroid()
+
+
+@register
+class SGDClassifierNode(_ClassifierNode):
+    """Stochastic-gradient linear classifier (log-loss -> calibrated proba)."""
+    node_type = "sgd_classifier"
+    def _make(self): return SGDClassifier(loss="log_loss", random_state=0)
+
+
+@register
+class PassiveAggressiveClassifierNode(_ClassifierNode):
+    node_type = "passive_aggressive_classifier"
+    def _make(self): return PassiveAggressiveClassifier(random_state=0)

@@ -162,3 +162,37 @@ class ParticleFilterNode(Node):
         var = float(np.sum(w * (p - est) ** 2))
         return Belief("forecast", {"estimate": est, "variance": var},
                       float(1.0 / (1.0 + var)), self.name)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a, batch 3) — kernel density estimate as a probabilistic
+# anomaly detector (low estimated density => outlier).
+# --------------------------------------------------------------------------
+import numpy as _np  # noqa: E402
+from scipy.stats import gaussian_kde  # noqa: E402
+
+
+@register
+class KDEAnomalyNode(Node):
+    """Gaussian kernel-density estimate; flags the lowest-density points."""
+    layer = "probability"
+    node_type = "kde_anomaly"
+
+    def __init__(self, quantile: float = 0.05, **kw):
+        super().__init__(quantile=quantile, **kw)
+        self.quantile = quantile
+
+    def _predict(self, X: _np.ndarray) -> Belief:
+        try:
+            kde = gaussian_kde(X.T)
+            dens = kde(X.T)
+        except Exception:
+            dens = _np.ones(X.shape[0])
+        score = -_np.log(dens + 1e-12)
+        thr = float(_np.quantile(dens, self.quantile))
+        flags = (dens < thr).astype(int)
+        frac = float(flags.mean())
+        return Belief("anomaly",
+                      {"n_anomalies": int(flags.sum()), "fraction": frac,
+                       "scores": score.tolist(), "flags": flags.tolist()},
+                      float(min(1.0, frac * 3)), self.name)

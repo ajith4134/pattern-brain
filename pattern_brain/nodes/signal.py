@@ -259,3 +259,152 @@ class PeriodogramNode(Node):
             dom, conc = 0.0, 0.0
         return Belief("spectral", {"dominant_freq": dom, "energy": float(pxx.sum()),
                                    "spectrum": pxx.tolist()}, conc, self.name)
+
+
+# --------------------------------------------------------------------------
+# Build step 6 (Phase 6a, batch 3) — classical filters + spectral measures.
+# --------------------------------------------------------------------------
+from scipy.ndimage import median_filter as _median_filter, gaussian_filter1d  # noqa: E402
+from scipy.signal import wiener as _wiener  # noqa: E402
+
+
+@register
+class MedianFilterNode(Node):
+    """Median filter — removes impulsive (spike) noise while keeping edges."""
+    layer = "signal"
+    node_type = "median_filter"
+    is_transformer = True
+
+    def __init__(self, window: int = 5, **kw):
+        super().__init__(window=window, **kw)
+        self.window = window
+
+    def _transform(self, X: np.ndarray) -> np.ndarray:
+        w = max(1, min(self.window, X.shape[0]))
+        return _median_filter(X, size=(w, 1))
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        clean = self._transform(X)
+        resid = float(np.mean(np.abs(X - clean)))
+        snr = float(np.var(clean) / (np.var(X - clean) + 1e-9))
+        return Belief("denoised", {"series": clean.tolist(), "residual": resid},
+                      float(snr / (1 + snr)), self.name)
+
+
+@register
+class GaussianSmoothNode(Node):
+    """Gaussian-kernel smoothing along time."""
+    layer = "signal"
+    node_type = "gaussian_smooth"
+    is_transformer = True
+
+    def __init__(self, sigma: float = 2.0, **kw):
+        super().__init__(sigma=sigma, **kw)
+        self.sigma = sigma
+
+    def _transform(self, X: np.ndarray) -> np.ndarray:
+        return gaussian_filter1d(X, self.sigma, axis=0, mode="nearest")
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        out = self._transform(X)
+        return Belief("signal", {"series": out.tolist(),
+                                 "mean_abs_change": float(np.mean(np.abs(X - out)))},
+                      0.5, self.name)
+
+
+@register
+class WienerDenoiseNode(Node):
+    """Wiener adaptive denoising filter (per feature)."""
+    layer = "signal"
+    node_type = "wiener_denoise"
+    is_transformer = True
+
+    def __init__(self, window: int = 5, **kw):
+        super().__init__(window=window, **kw)
+        self.window = window
+
+    def _transform(self, X: np.ndarray) -> np.ndarray:
+        w = max(1, min(self.window, X.shape[0]))
+        cols = []
+        for j in range(X.shape[1]):
+            c = _wiener(X[:, j], mysize=w)
+            cols.append(np.nan_to_num(c, nan=X[:, j].mean()))
+        return np.column_stack(cols)
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        clean = self._transform(X)
+        resid = float(np.mean(np.abs(X - clean)))
+        snr = float(np.var(clean) / (np.var(X - clean) + 1e-9))
+        return Belief("denoised", {"series": clean.tolist(), "residual": resid},
+                      float(snr / (1 + snr)), self.name)
+
+
+@register
+class HodrickPrescottNode(Node):
+    """Hodrick-Prescott trend filter (separates slow trend from cycle)."""
+    layer = "signal"
+    node_type = "hp_filter"
+    is_transformer = True
+
+    def __init__(self, lam: float = 100.0, **kw):
+        super().__init__(lam=lam, **kw)
+        self.lam = lam
+
+    def _trend(self, x: np.ndarray) -> np.ndarray:
+        T = len(x)
+        if T < 3:
+            return x.copy()
+        I = np.eye(T)
+        D = np.diff(I, n=2, axis=0)          # (T-2, T) second-difference operator
+        return np.linalg.solve(I + self.lam * (D.T @ D), x)
+
+    def _transform(self, X: np.ndarray) -> np.ndarray:
+        return np.column_stack([self._trend(X[:, j]) for j in range(X.shape[1])])
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        trend = self._transform(X)
+        return Belief("signal", {"series": trend.tolist(),
+                                 "mean_abs_change": float(np.mean(np.abs(X - trend)))},
+                      0.5, self.name)
+
+
+@register
+class SpectralEntropyNode(Node):
+    """Spectral entropy of feature 0 — flatness of the power spectrum (a
+    randomness/complexity measure)."""
+    layer = "signal"
+    node_type = "spectral_entropy"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        f, pxx = _periodogram(X[:, 0])
+        p = pxx / (pxx.sum() + 1e-12)
+        p = p[p > 0]
+        ent = float(-(p * np.log(p)).sum() / (np.log(len(p)) + 1e-12)) if len(p) > 1 else 0.0
+        k = int(np.argmax(pxx[1:]) + 1) if len(pxx) > 1 and pxx[1:].sum() > 0 else 0
+        dom = float(f[k]) if k else 0.0
+        return Belief("spectral", {"dominant_freq": dom, "energy": float(pxx.sum()),
+                                   "spectrum": pxx.tolist(), "entropy": ent},
+                      float(1.0 - ent), self.name)
+
+
+@register
+class AutocorrPeriodNode(Node):
+    """Dominant period of feature 0 via the autocorrelation function's first peak."""
+    layer = "signal"
+    node_type = "autocorr_period"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        x = X[:, 0] - X[:, 0].mean()
+        n = len(x)
+        ac = np.correlate(x, x, mode="full")[n - 1:]
+        ac = ac / (ac[0] + 1e-12)
+        period, conf = 0.0, 0.0
+        if len(ac) > 2:
+            d = np.diff(ac)
+            for i in range(1, len(d)):
+                if d[i - 1] > 0 and d[i] <= 0:    # first local maximum
+                    period = float(i); conf = float(max(0.0, ac[i])); break
+        dom = 1.0 / period if period > 0 else 0.0
+        return Belief("spectral", {"dominant_freq": dom, "energy": float((x ** 2).sum()),
+                                   "spectrum": ac.tolist(), "period": period},
+                      conf, self.name)
