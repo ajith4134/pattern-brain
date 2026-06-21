@@ -36,10 +36,16 @@ def test_gather_context_reads_project():
         check(len(ctx["weakest_layers"]) >= 1, "no weakest layer identified")
         check(isinstance(ctx["open_plan_items"], list), "open items not a list")
         check("Pattern Brain" in ctx["goal_excerpt"], "didn't read README goal")
+        # coverage wiring: gaps surfaced + at least one heuristic idea targets a gap family
+        check(isinstance(ctx["coverage_gaps"], list) and len(ctx["coverage_gaps"]) >= 1,
+              "coverage_gaps not surfaced in context")
+        check(all({"family", "missing", "n_built"} <= set(g) for g in ctx["coverage_gaps"]),
+              "coverage gap entry malformed")
     finally:
         shutil.rmtree(a.state_dir, ignore_errors=True)
     print(f"  context: 8 layers, weakest={ctx['weakest_layers']}, "
-          f"{len(ctx['open_plan_items'])} open plan items read")
+          f"{len(ctx['open_plan_items'])} open items, {len(ctx['coverage_gaps'])} coverage gaps "
+          f"(top: {ctx['coverage_gaps'][0]['family'] if ctx['coverage_gaps'] else None})")
 
 
 def test_heuristic_ideas_are_grounded():
@@ -49,7 +55,8 @@ def test_heuristic_ideas_are_grounded():
         check(len(ideas) >= 3, "too few heuristic ideas")
         check(all(i.search_queries for i in ideas), "an idea has no search queries")
         check(all(i.proposed_change for i in ideas), "an idea has no proposed change")
-        check(any("layer" in i.title.lower() for i in ideas), "no weak-layer idea")
+        check(any(("layer" in i.title.lower() or "missing" in i.title.lower()
+                   or "models" in i.title.lower()) for i in ideas), "no gap-targeting idea")
         check(all(i.status == "proposed" for i in ideas), "ideas should start 'proposed'")
     finally:
         shutil.rmtree(a.state_dir, ignore_errors=True)

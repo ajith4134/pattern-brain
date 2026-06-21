@@ -32,6 +32,7 @@ import time
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional
 
+from ..coverage import coverage as model_coverage
 from ..knowledge import PROJECT_ROOT
 from ..registry import by_layer, layers
 from .tools import Toolbox
@@ -116,10 +117,23 @@ class IdeationAdvisor:
         plan = self._read("PLAN.md")
         open_items = [ln.strip(" -") for ln in plan.splitlines()
                       if ("OPEN QUESTION" in ln or "❓" in ln or "still open" in ln.lower())][:6]
+        # coverage meter: the lowest-covered families are the biggest structural gaps
+        cov_pct, cov_gaps = None, []
+        try:
+            cov = model_coverage()
+            cov_pct = cov["curated_pct"]
+            for f in sorted(cov["families"], key=lambda x: (x["pct"], -x["n_target"])):
+                if f["missing"]:
+                    cov_gaps.append({"family": f["family"], "n_built": f["n_built"],
+                                     "n_target": f["n_target"], "missing": f["missing"][:5]})
+            cov_gaps = cov_gaps[:5]
+        except Exception:
+            pass
         return {
             "bank_by_layer": by, "weakest_layers": weak_layers,
             "working_pathways": working, "knowledge_passages": kb.get("passages", 0),
-            "open_plan_items": open_items,
+            "open_plan_items": open_items, "coverage_pct": cov_pct,
+            "coverage_gaps": cov_gaps,
             "goal_excerpt": self._read("README.md")[:600],
         }
 
@@ -254,6 +268,22 @@ class IdeationAdvisor:
 
     def _heuristic_ideas(self, ctx: Dict[str, Any], n: int) -> List[Idea]:
         out: List[Idea] = []
+        # coverage-driven first: target the lowest-covered families (the meter's gaps)
+        for g in ctx.get("coverage_gaps", []):
+            fam, miss = g["family"], g["missing"]
+            out.append(Idea(
+                id="", title=f"Build missing '{fam}' models ({g['n_built']}/{g['n_target']})",
+                concept=f"The {fam} family is only {g['n_built']}/{g['n_target']} covered. "
+                        f"Missing: {', '.join(miss)}.",
+                why="Lowest-coverage families are the biggest structural gaps in the bank "
+                    "(per the coverage meter) — filling them most increases pathway diversity.",
+                search_queries=[f"{fam} models for time series 2026",
+                                f"best {miss[0]} implementation python"],
+                proposed_change=f"Add {fam} nodes ({', '.join(miss[:3])}) behind the generic Node "
+                                f"interface (Rule 23), interlingua-conformant, shadow-first.",
+                expected_benefit=f"Raises {fam} coverage toward complete; more diverse pathways.",
+                risk="Some entries may need optional deps (torch / specialized libs) — keep optional per §0b.",
+                source="heuristic"))
         weak = ctx["weakest_layers"][0] if ctx["weakest_layers"] else "probability"
         out.append(Idea(
             id="", title=f"Strengthen the '{weak}' layer (it's the thinnest)",
