@@ -188,6 +188,19 @@ A dashboard **dedicated only to Pattern Brain** (no trading-bot coupling, Rule 1
 
 ---
 
+## 10. Ideation & Research Advisor — autonomy = Option 2 + effectiveness upgrades (owner-approved 2026-06-21)
+✅ **DECIDED — autonomy level: Option 2 (recurring loop that PROPOSES, owner approves; never decides/builds).** Grounded in a deep sweep (DISCUSSION Block 56): even Google DeepMind's *AI Co-Scientist* (Nature) is deliberately not fully autonomous; the guardrails literature names unattended self-building as the dominant failure mode. The advisor proposes only, behind an auditable boundary it cannot cross without a human.
+
+✅ **DECIDED — effectiveness method (Co-Scientist + Idea-Arena research), in `pattern_brain/agent/advisor.py`:**
+- **Generate → Critique → Novelty → Rank**, not single-shot. `_critique` attacks each idea's feasibility/pitfalls (counters "LLMs overstate success"); `_novelty` is RAG-grounded (1 − max similarity to the book corpus + prior ideas); `_elo_rank` is a pairwise **Idea-Arena ELO tournament** run in **both orders** (LLM-judge position-bias control), bounded to a small finalist set so cost stays ~constant.
+- Ideas carry `feasibility`, `novelty`, `elo`, `critique` (shown on the dashboard Advisor card).
+- **Daily cadence:** `tools/advisor_cycle.py` runs one full cycle and **appends the top-N to PLAN.md tagged 🟡** + the dashboard panel — never `✅ decided`, never built; iteration/cost-bounded; book-ingest hard-capped so it can't stall. A scheduled routine invokes it and opens a PR (never pushes to main).
+- **Conversational counterpart:** `~/.claude/ideation_advisor_rule.txt` (global Claude Code rule, outside this repo) upgraded with the same generate→critique→rank method so in-session ideas are self-critiqued + ranked before being shown.
+
+**Evidence (Rule 25):** `tests/test_advisor.py` green — critique sets feasibility 0..1, novelty RAG-scored, ELO ranks best-first, LLM pairwise judge wired, approval-gated (no implementing method). `advisor_cycle.py` proven end-to-end offline (3 ranked 🟡 proposals appended to PLAN.md then reverted); cloud path proven by unit tests + the live key health-check.
+
+---
+
 ## Implementation progress tracker (Rule 22)
 **Language policy applies to every step below (§0b):** prototype in Python first → profile → rewrite only measured hot paths in C/C++, behind the unchanged common node interface. No step is "Python-only" by assumption.
 

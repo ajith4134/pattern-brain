@@ -75,6 +75,11 @@ class Idea:
     risk: str = ""
     status: str = "proposed"          # proposed | approved | implemented | dismissed
     source: str = "heuristic"         # heuristic | llm
+    # effectiveness upgrades (Block 56 / AI Co-Scientist + Idea-Arena research):
+    feasibility: float = 0.5          # critic pass: 0..1, is it grounded + buildable here
+    novelty: float = 0.5              # RAG-grounded: 1 - max similarity to known corpus/ideas
+    elo: float = 1000.0               # pairwise-tournament rank score
+    critique: str = ""                # the self-critique (pitfalls / feasibility reasoning)
     ts: float = field(default_factory=time.time)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -120,13 +125,101 @@ class IdeationAdvisor:
 
     # --------------------------------------------------------------- generation
     def generate(self, n: int = 5) -> List[Idea]:
+        """Co-Scientist-style cycle: GENERATE candidates → CRITIQUE (feasibility +
+        pitfalls) → NOVELTY (RAG) → pairwise-ELO RANK → keep the top n. Returns the
+        survivors, best-first."""
         ctx = self.gather_context()
-        ideas = self._llm_ideas(ctx, n) if self.llm_chat is not None else []
-        if not ideas:
-            ideas = self._heuristic_ideas(ctx, n)
-        added = self._merge(ideas)
+        pool = self._llm_ideas(ctx, max(n, 6)) if self.llm_chat is not None else []
+        if not pool:
+            pool = self._heuristic_ideas(ctx, max(n, 6))
+        for idea in pool:           # critic pass + RAG novelty on every candidate
+            self._critique(idea)
+            self._novelty(idea)
+        # bound the O(n^2) pairwise tournament: pre-filter by composite score to a
+        # small finalist set, then run ELO only on the finalists (keeps LLM-judge
+        # cost ~constant per cycle).
+        pool.sort(key=lambda x: 0.5 * x.novelty + 0.5 * x.feasibility, reverse=True)
+        finalists = pool[:max(n, 4)]
+        self._elo_rank(finalists)   # pairwise, both orders (position-bias control)
+        finalists.sort(key=lambda x: x.elo, reverse=True)
+        ranked = finalists + pool[len(finalists):]
+        added = self._merge(ranked[:n])
         self.save()
         return added
+
+    # ----------------------------------------------------- effectiveness upgrades
+    def _critique(self, idea: "Idea") -> None:
+        """Attack the idea: feasibility 0..1 + pitfalls. Counters the documented
+        'LLMs overstate success / skimp on feasibility' failure mode."""
+        if self.llm_chat is not None:
+            try:
+                txt = self.llm_chat([
+                    {"role": "system", "content": "You are a skeptical ML reviewer. Critique the "
+                     "idea for feasibility, real pitfalls, and statistical rigor. Reply ONLY JSON "
+                     '{"feasibility": 0..1, "critique": "<=2 sentences"}.'},
+                    {"role": "user", "content": f"{idea.title}: {idea.concept} "
+                     f"Proposed: {idea.proposed_change}"}])
+                o = _extract_json_obj(txt)
+                idea.feasibility = max(0.0, min(1.0, float(o.get("feasibility", 0.5))))
+                idea.critique = str(o.get("critique", ""))[:400] or idea.critique
+                if idea.critique:
+                    return
+            except Exception:
+                pass
+        # offline heuristic: feasibility from dependency/compute vs reuse signals
+        text = (idea.concept + " " + idea.proposed_change + " " + idea.risk).lower()
+        feas = 0.6
+        for kw, d in (("new dependency", -0.18), ("torch", -0.08), ("compute", -0.08),
+                      ("api key", -0.06), ("search api", -0.06),
+                      ("wrap behind", 0.12), ("add node", 0.08), ("wire", 0.1),
+                      ("optional", 0.1), ("existing", 0.08)):
+            if kw in text:
+                feas += d
+        idea.feasibility = max(0.05, min(0.95, feas))
+        idea.critique = ("Heuristic critique: feasibility inferred from dependency/compute vs "
+                         "reuse signals; verify statistical rigor + real pitfalls before building.")
+
+    def _novelty(self, idea: "Idea") -> None:
+        """RAG-grounded novelty = 1 - max similarity to the known corpus + prior ideas
+        (so we don't re-propose what the books already cover or we already proposed)."""
+        try:
+            kb = self.toolbox.knowledge
+            v = kb.embedder.embed(idea.title + ". " + idea.concept)
+            hits = kb.store.search(v, k=1)
+            sim = float(hits[0].score) if hits else 0.0
+            idea.novelty = max(0.0, min(1.0, 1.0 - sim))
+        except Exception:
+            idea.novelty = 0.6
+
+    def _compare(self, a: "Idea", b: "Idea") -> float:
+        """Return 1.0 if a is the better idea, else 0.0 (the Idea-Arena judge)."""
+        if self.llm_chat is not None:
+            try:
+                t = self.llm_chat([
+                    {"role": "system", "content": "Which idea is better overall "
+                     "(novelty + feasibility + impact)? Reply ONLY 'A' or 'B'."},
+                    {"role": "user", "content": f"A: {a.title} — {a.concept}\n"
+                     f"B: {b.title} — {b.concept}"}]).strip().upper()
+                if t.startswith("A"):
+                    return 1.0
+                if t.startswith("B"):
+                    return 0.0
+            except Exception:
+                pass
+        sa, sb = 0.5 * a.novelty + 0.5 * a.feasibility, 0.5 * b.novelty + 0.5 * b.feasibility
+        return 1.0 if sa >= sb else 0.0
+
+    def _elo_rank(self, ideas: List["Idea"], k: float = 24.0) -> None:
+        """Pairwise round-robin ELO. permutations() runs each pair in BOTH orders —
+        the documented fix for LLM-judge position bias."""
+        import itertools
+        for i in ideas:
+            i.elo = 1000.0
+        for a, b in itertools.permutations(ideas, 2):
+            wa = self._compare(a, b)
+            ea = 1.0 / (1.0 + 10 ** ((b.elo - a.elo) / 400.0))
+            a.elo += k * (wa - ea)
+            b.elo += k * ((1.0 - wa) - (1.0 - ea))
 
     def _llm_ideas(self, ctx: Dict[str, Any], n: int) -> List[Idea]:
         kn = self.toolbox.retrieve_knowledge(
@@ -241,3 +334,11 @@ def _extract_json_array(text: str) -> List[Dict[str, Any]]:
         return json.loads(text[i:j + 1])
     except Exception:
         return []
+
+
+def _extract_json_obj(text: str) -> Dict[str, Any]:
+    try:
+        i, j = text.index("{"), text.rindex("}")
+        return json.loads(text[i:j + 1])
+    except Exception:
+        return {}

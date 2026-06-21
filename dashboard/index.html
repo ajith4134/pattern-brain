@@ -731,7 +731,9 @@ function EngineerView({ color }) {
             <div><b style=${{ color: "#e5e7eb" }}>${it.title}</b>
               <span class="kindtag" style=${{ marginLeft: "6px" }}>${it.status}</span>
               <span class="kindtag">${it.source}</span></div>
+            <div class="sub">elo ${Math.round(it.elo || 1000)} · feasibility ${(it.feasibility ?? 0.5).toFixed(2)} · novelty ${(it.novelty ?? 0.5).toFixed(2)}</div>
             <div style=${{ color: "#bcd", margin: "4px 0" }}>${it.concept}</div>
+            ${it.critique ? html`<div class="sub" style=${{ fontStyle: "italic" }}>critique: ${it.critique}</div>` : null}
             <div class="sub">why: ${it.why}</div>
             <div class="sub">proposed: ${it.proposed_change}</div>
             <div class="sub">🔎 ${(it.search_queries||[]).join("  ·  ")}</div>

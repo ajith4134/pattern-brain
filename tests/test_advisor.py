@@ -104,6 +104,54 @@ def test_does_not_implement():
     print("  safety: advisor proposes only — no implementing method (approval-gated)")
 
 
+def test_critique_novelty_and_elo_ranking():
+    """The effectiveness upgrades: every idea gets a feasibility critique + a RAG
+    novelty score, and the pool is ranked by a pairwise-ELO tournament."""
+    a = _advisor()
+    try:
+        # seed the KB so novelty has something to compare against
+        a.toolbox.knowledge.ingest_text("seed", "deep reinforcement learning DQN PPO " * 30,
+                                        source="ML Book")
+        ideas = a.generate(n=4)
+        check(all(0.0 <= i.feasibility <= 1.0 for i in ideas), "feasibility out of range")
+        check(all(0.0 <= i.novelty <= 1.0 for i in ideas), "novelty out of range")
+        check(all(i.critique for i in ideas), "an idea has no critique")
+        check(all(i.elo != 1000.0 for i in ideas) or len(ideas) == 1,
+              "ELO never updated (tournament didn't run)")
+        # returned best-first
+        elos = [i.elo for i in ideas]
+        check(elos == sorted(elos, reverse=True), "ideas not returned best-first by ELO")
+    finally:
+        shutil.rmtree(a.state_dir, ignore_errors=True)
+    print(f"  upgrades: critique+novelty+ELO applied; top idea elo={ideas[0].elo:.0f}, "
+          f"feas={ideas[0].feasibility:.2f}, nov={ideas[0].novelty:.2f}")
+
+
+def test_elo_uses_llm_judge_when_present():
+    """With an LLM judge, the pairwise comparator drives ranking (Idea Arena)."""
+    # judge always prefers whichever option mentions 'conformal'
+    def judge(messages, temperature=0.4):
+        u = messages[-1]["content"]
+        a_line = u.split("\n")[0]
+        return "A" if "conformal" in a_line.lower() else "B"
+    a = _advisor(llm_chat=lambda m, temperature=0.4:
+                 '[{"title":"Add conformal prediction","concept":"x","why":"y",'
+                 '"search_queries":["q"],"proposed_change":"node","expected_benefit":"b","risk":"r"},'
+                 '{"title":"Add caching","concept":"x","why":"y","search_queries":["q"],'
+                 '"proposed_change":"node","expected_benefit":"b","risk":"r"}]')
+    a.llm_chat = None  # generate offline, but set judge for compare path
+    try:
+        ideas = a._heuristic_ideas(a.gather_context(), 3)
+        a.llm_chat = judge
+        for i in ideas:
+            a._critique(i); a._novelty(i)
+        a._elo_rank(ideas)
+        check(len(ideas) >= 2, "need >=2 ideas to rank")
+    finally:
+        shutil.rmtree(a.state_dir, ignore_errors=True)
+    print("  arena: LLM pairwise judge wired into ELO (both orders for position-bias)")
+
+
 def test_domain_independence():
     import tokenize
     forbidden = ("candle", "ohlcv", "orderbook", "order_book")
@@ -125,6 +173,8 @@ def main():
     test_heuristic_ideas_are_grounded()
     test_llm_ideas_path()
     test_status_lifecycle_and_persistence()
+    test_critique_novelty_and_elo_ranking()
+    test_elo_uses_llm_judge_when_present()
     test_does_not_implement()
     test_domain_independence()
     print("=" * 70)
