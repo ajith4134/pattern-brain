@@ -26,6 +26,13 @@ from .interlingua import (
     has_migration_path, migrate_belief, Violation, validate_belief, detect_drift,
     ConformanceReport, conformance_report, CoherenceNote, interlingua_coherence,
 )
+from .evaluator import (
+    Evaluator, EvaluationReport, ObjectiveSpec, DEFAULT_OBJECTIVES,
+    purged_walk_forward_splits, sharpe, max_drawdown, stability,
+    probabilistic_sharpe_ratio, deflated_sharpe_ratio, min_track_record_length,
+    expected_max_sharpe, discounted_ucb_score, sliding_window_ucb_score,
+    nondominated_sort, pareto_front, cscv_pbo, anchor_check,
+)
 
 __all__ = [
     "Belief", "SCHEMA_VERSION", "Node",
@@ -39,4 +46,9 @@ __all__ = [
     "register_migration", "has_migration_path", "migrate_belief", "Violation",
     "validate_belief", "detect_drift", "ConformanceReport", "conformance_report",
     "CoherenceNote", "interlingua_coherence",
+    "Evaluator", "EvaluationReport", "ObjectiveSpec", "DEFAULT_OBJECTIVES",
+    "purged_walk_forward_splits", "sharpe", "max_drawdown", "stability",
+    "probabilistic_sharpe_ratio", "deflated_sharpe_ratio", "min_track_record_length",
+    "expected_max_sharpe", "discounted_ucb_score", "sliding_window_ucb_score",
+    "nondominated_sort", "pareto_front", "cscv_pbo", "anchor_check",
 ]

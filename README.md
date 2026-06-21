@@ -39,7 +39,8 @@ python3 -m venv .venv
 - `pattern_brain/` — the model bank + Connector Intelligence v0 (steps 1-2) + routing v1 (`routing.py`, step 4) + interlingua versioning (`interlingua.py`, step 5).
 - `pattern_brain/adapters/` — the stock-data adapter (build step 3); the only domain-specific code, not imported by the core (Rule 23).
 - `dashboard/` — the §8 living-graph dashboard (FastAPI + React/ReactFlow/Plotly), incl. the step-3 Adapter-View tab, step-4 routed-pathway card, and step-5 interlingua-conformance card.
-- `tests/` — contract + behavior suites (`test_bank.py`, `test_connector.py`, `test_adapter.py`, `test_routing.py`, `test_interlingua.py`, `test_deep.py`, `test_dashboard.py`). The light suites run on system `python3`; `test_deep.py` + the full bank need the torch-equipped `.venv` (it skips cleanly without torch).
+- `pattern_brain/evaluator.py` — the shared 5-layer Evaluator (final phase): the hard gate Features 1/2/3 use to score/admit a candidate (purged walk-forward splits; PSR/DSR/minTRL significance; discounted-UCB; NSGA-II Pareto + CSCV/PBO; anchor episodes). Domain-agnostic (operates on a generic outcome series; objectives are a pluggable `ObjectiveSpec`).
+- `tests/` — contract + behavior suites (`test_bank.py`, `test_connector.py`, `test_adapter.py`, `test_routing.py`, `test_interlingua.py`, `test_deep.py`, `test_evaluator.py`, `test_dashboard.py`). The light suites run on system `python3`; `test_deep.py` + the full bank need the torch-equipped `.venv` (it skips cleanly without torch).
 - `requirements.txt` / `requirements-dashboard.txt` — model-bank deps vs. dashboard-only deps, kept separate so the core bank stays light.
 
 All future files for this project — code, data, deliverables — go here too, per Rule 1 in `RULES.md`.
