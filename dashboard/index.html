@@ -538,6 +538,62 @@ function BankView({ color }) {
     </div>`;
 }
 
+// --- Galton board: the "magic of probability" — drop balls through pegs (50/50
+// each), watch the Binomial histogram converge to the Normal (the CLT, live). The
+// intuition pump for the probability layer: individual chance -> collective law.
+function GaltonView() {
+  const [rows, setRows] = useState(12);
+  const [balls, setBalls] = useState(2000);
+  const [d, setD] = useState(null);
+  const ref = useRef(null);
+  const load = useCallback((r, n) => {
+    fetch(`/api/galton?rows=${r}&balls=${n}`).then(x => x.json()).then(setD);
+  }, []);
+  useEffect(() => { load(rows, balls); }, []);
+  useEffect(() => {
+    if (!d || !ref.current || !window.Plotly) return;
+    window.Plotly.react(ref.current, [
+      { type: "bar", x: d.bins, y: d.counts, name: "balls (random)",
+        marker: { color: "#5eead4" } },
+      { type: "scatter", mode: "lines", x: d.bins, y: d.normal, name: "Normal (CLT)",
+        line: { color: "#f59e0b", width: 3 } },
+      { type: "scatter", mode: "markers", x: d.bins, y: d.binomial, name: "Binomial (exact)",
+        marker: { color: "#7dd3fc", size: 6 } },
+    ], {
+      margin: { l: 40, r: 10, t: 10, b: 36 }, height: 420,
+      paper_bgcolor: "transparent", plot_bgcolor: "transparent",
+      font: { color: "#8aa0c8", size: 11 }, bargap: 0.05,
+      legend: { orientation: "h", y: 1.1 },
+      xaxis: { title: "bin (number of right-bounces)", gridcolor: "#26314f" },
+      yaxis: { title: "ball count", gridcolor: "#26314f" },
+    }, { displayModeBar: false });
+  }, [d]);
+  return html`
+    <div style=${{ padding: "4px" }}>
+      <div class="card">
+        <h2>🎲 The Galton board — the magic of probability</h2>
+        <div class="hint">Each ball bounces left/right (50/50) through ${rows} rows of pegs and lands in a bin.
+          No single ball is predictable — yet thousands always pile into the same bell curve.
+          The bars are <b style=${{color:"#5eead4"}}>random balls</b>; they track the
+          <b style=${{color:"#7dd3fc"}}>exact Binomial</b> and converge to the
+          <b style=${{color:"#f59e0b"}}>Normal</b> (the Central Limit Theorem, live). This is the
+          probability layer's whole premise: bet on the distribution, not the coin flip.</div>
+        ${d ? html`<div class="hint">mean = ${d.mean}, std = ${d.std}, balls = ${d.balls}</div>` : null}
+        <div class="body"><div ref=${ref}></div></div>
+        <div style=${{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap" }}>
+          <label>rows (pegs): ${rows}
+            <input type="range" min="4" max="24" value=${rows}
+                   onInput=${e => { const r=+e.target.value; setRows(r); load(r, balls); }} /></label>
+          <label>balls: ${balls}
+            <input type="range" min="100" max="50000" step="100" value=${balls}
+                   onInput=${e => { const n=+e.target.value; setBalls(n); load(rows, n); }} /></label>
+          <button onClick=${() => load(rows, balls)}>🎲 drop again (new random run)</button>
+          <button onClick=${() => { const n=Math.min(balls+5000,50000); setBalls(n); load(rows,n);}}>+5000 balls</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 // --- ML Engineer Agent view (ENG-4): LLM engine + knowledge base + the live
 // closed loop + a chat box to converse with the agent like a Claude session.
 function EngineerView({ color }) {
@@ -735,7 +791,7 @@ function App() {
       <header>
         <h1>🧠 Pattern Brain</h1>
         <div class="tabs">
-          ${[["overview","Overview"],["engineer","🤖 ML Engineer"],["bank","Model Bank"],["evaluator","Evaluator"],
+          ${[["overview","Overview"],["engineer","🤖 ML Engineer"],["galton","🎲 Galton"],["bank","Model Bank"],["evaluator","Evaluator"],
              ["evolution","Evolution"],["pathways","Pathways"],["living","Living Graph"],
              ["adapter","Adapter"],["files","Files"]].map(([k,label]) => html`
             <button key=${k} class=${"tab" + (view===k ? " active" : "")}
@@ -751,6 +807,7 @@ function App() {
 
       ${view === "overview" ? html`<${OverviewView} color=${color} setView=${setView} />`
         : view === "engineer" ? html`<${EngineerView} color=${color} />`
+        : view === "galton" ? html`<${GaltonView} />`
         : view === "files" ? html`<${FilesView} />`
         : view === "evaluator" ? html`<${EvaluatorView} />`
         : view === "evolution" ? html`<${EvolutionView} color=${color} />`

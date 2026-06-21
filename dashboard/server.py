@@ -452,6 +452,33 @@ def agent_step() -> JSONResponse:
     return JSONResponse({"result": r.to_dict(), "status": a.status()})
 
 
+def _galton_payload(rows: int = 12, balls: int = 2000, seed: int = 0) -> dict:
+    """A Galton board (bean machine): drop `balls` through `rows` of pegs (each a
+    50/50 left/right bounce) and count the bins. The histogram is Binomial(rows,
+    ½) and converges to a Normal — the Central Limit Theorem you can watch. This is
+    the intuition pump for the probability layer (individual chance -> collective law)."""
+    import math
+    rows = max(2, min(int(rows), 30))
+    balls = max(10, min(int(balls), 200_000))
+    rng = np.random.default_rng(seed)
+    landing = rng.integers(0, 2, size=(balls, rows)).sum(axis=1)   # rights per ball = bin
+    counts = np.bincount(landing, minlength=rows + 1)[: rows + 1]
+    bins = list(range(rows + 1))
+    binom = [math.comb(rows, k) / (2 ** rows) * balls for k in bins]   # exact expectation
+    mean, std = rows / 2.0, math.sqrt(rows * 0.25)
+    normal = [balls * (1.0 / (std * math.sqrt(2 * math.pi)))
+              * math.exp(-0.5 * ((k - mean) / std) ** 2) for k in bins]
+    return {"rows": rows, "balls": balls, "bins": bins, "counts": counts.tolist(),
+            "binomial": [round(b, 2) for b in binom], "normal": [round(v, 2) for v in normal],
+            "mean": mean, "std": round(std, 3)}
+
+
+@app.get("/api/galton")
+def galton(rows: int = 12, balls: int = 2000) -> JSONResponse:
+    import random as _r
+    return JSONResponse(_galton_payload(rows, balls, seed=_r.randint(0, 10 ** 9)))
+
+
 @app.post("/api/agent/chat")
 async def agent_chat(request: Request) -> JSONResponse:
     """Converse with the agent (the owner's 'talk to it like this session')."""

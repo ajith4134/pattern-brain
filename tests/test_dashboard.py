@@ -189,6 +189,22 @@ def test_adapter_endpoint():
           f"-> {d['trace']['output']['type']}")
 
 
+def test_galton_endpoint():
+    """The Galton board: bins, random counts, exact Binomial, and Normal overlay."""
+    r = client.get("/api/galton?rows=10&balls=3000")
+    check(r.status_code == 200, f"/api/galton status {r.status_code}")
+    d = r.json()
+    check(len(d["bins"]) == d["rows"] + 1, "wrong number of bins")
+    check(sum(d["counts"]) == d["balls"], "ball counts don't sum to balls dropped")
+    check(len(d["binomial"]) == d["rows"] + 1 and len(d["normal"]) == d["rows"] + 1,
+          "binomial/normal overlays wrong length")
+    check(abs(d["mean"] - d["rows"] / 2) < 1e-9, "mean should be rows/2")
+    # peak of the random histogram should be near the center bin (law of large numbers)
+    peak = d["counts"].index(max(d["counts"]))
+    check(abs(peak - d["rows"] / 2) <= 2, f"histogram peak {peak} not near center")
+    print(f"  GET /api/galton -> {d['balls']} balls, {d['rows']} rows, peak near bin {peak}")
+
+
 def test_knowledge_endpoint():
     """ENG-4: /api/knowledge returns the book manifest + KB stats + LLM status."""
     r = client.get("/api/knowledge")
@@ -253,6 +269,7 @@ def main():
     test_route_endpoint()
     test_conformance_endpoint()
     test_adapter_endpoint()
+    test_galton_endpoint()
     test_knowledge_endpoint()
     test_agent_status_and_step_and_chat()
     test_ws_run_streams_start_hops_done()
