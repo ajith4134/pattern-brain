@@ -8,6 +8,8 @@ emitting a belief stream, so this serves exactly that:
 * ``GET  /api/bank``    -> the model-bank genome (every node's metadata, by layer).
 * ``GET  /api/pathway`` -> the step-2 hardcoded pathway + its nodes' metadata.
 * ``GET  /api/run``     -> run the pathway once on synthetic data, full trace.
+* ``GET  /api/route``   -> Connector v1 (step 4): a router decides the pathway
+                          hop-by-hop; returns the discovered path + per-hop reasons.
 * ``WS   /ws/run``      -> run the pathway, streaming each hop as it completes so
                           the living graph can animate belief-flow (the reason §8
                           chose a WebSocket backend).
@@ -85,6 +87,22 @@ def run() -> JSONResponse:
     """Run the pathway once on synthetic data; return the full auditable trace."""
     res = pb.default_connector().run(synthetic_sequence())
     return JSONResponse(res.to_dict())
+
+
+@app.get("/api/route")
+def route() -> JSONResponse:
+    """Connector v1 (build step 4): a router DECIDES the pathway hop-by-hop over
+    the full bank (offline HeuristicRouter — no LLM/API needed). Returns the
+    discovered pathway + the per-hop routing rationale, so the dashboard can show
+    *why* each node was chosen, not just a fixed list."""
+    routed = pb.default_routed_connector().route(synthetic_sequence())
+    return JSONResponse({
+        "router": pb.default_routed_connector().router.name,
+        "pathway": routed.result.pathway,
+        "decisions": [d.to_dict() for d in routed.decisions],
+        "output": routed.result.output.to_dict() if routed.result.output else None,
+        "trace": routed.result.to_dict(),
+    })
 
 
 def synthetic_candles(T: int = 360, seed: int = 11):

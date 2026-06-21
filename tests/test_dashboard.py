@@ -73,6 +73,20 @@ def test_run_endpoint():
     print(f"  GET /api/run -> {len(d['hops'])} hops, output={d['output']['type']}")
 
 
+def test_route_endpoint():
+    """Step-4 Connector v1: /api/route returns a router-discovered pathway plus
+    the per-hop rationale (the dashboard's routed-pathway card source)."""
+    r = client.get("/api/route")
+    check(r.status_code == 200, f"/api/route status {r.status_code}")
+    d = r.json()
+    check(len(d["pathway"]) >= 2, f"routed pathway too short: {d['pathway']}")
+    check(len(d["decisions"]) >= len(d["pathway"]), "fewer decisions than hops")
+    check(all("reason" in dec and "candidates" in dec for dec in d["decisions"]),
+          "router decisions missing reason/candidates")
+    check(d["output"] is not None, "routed run produced no terminal belief")
+    print(f"  GET /api/route -> {' -> '.join(d['pathway'])} (router={d['router']})")
+
+
 def test_adapter_endpoint():
     """Step-3 Adapter View: candles -> StockDataAdapter -> generic (T,D) -> the
     SAME core pathway. The endpoint must return all three so the tab can show the
@@ -121,6 +135,7 @@ def main():
     test_bank_endpoint()
     test_pathway_endpoint()
     test_run_endpoint()
+    test_route_endpoint()
     test_adapter_endpoint()
     test_ws_run_streams_start_hops_done()
     print("=" * 70)

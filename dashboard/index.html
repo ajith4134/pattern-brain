@@ -187,6 +187,47 @@ function nodeStyle(layer, fired) {
   };
 }
 
+// --- Connector v1 routed pathway (build-tracker step 4). A router DECIDES the
+// path hop-by-hop; this shows the discovered path + why each node was chosen.
+function RoutedCard({ color }) {
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const load = React.useCallback(() => {
+    setData(null); setErr(null);
+    fetch("/api/route").then(r => r.json()).then(setData).catch(e => setErr(String(e)));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  return html`
+    <div class="card">
+      <h2>Connector v1 — routed pathway (step 4: LLM-tool-calling router)</h2>
+      <div class="body">
+        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+          <span class="sub">router: ${data ? data.router : "…"} (offline default; LLM is a swappable boundary)</span>
+          <button onClick=${load} style=${{ padding: "4px 10px", fontSize: "11px" }}>↻ re-route</button>
+        </div>
+        ${err ? html`<span class="sub">route error: ${err}</span>` : null}
+        ${!data && !err ? html`<span class="sub">routing…</span>` : null}
+        ${data ? html`
+          <div style=${{ marginBottom: "8px" }}>
+            ${data.pathway.map((nt, i) => html`<span class="pill" key=${i}>${nt}</span>${i < data.pathway.length-1 ? " → " : ""}`)}
+          </div>
+          <div class="stream" style=${{ maxHeight: "200px" }}>
+            ${data.decisions.map((d, i) => html`
+              <div class="belief" key=${i}>
+                <div class="top">
+                  <span class="type" style=${{ color: color(d.layer) }}>${d.chosen || "stop"}${d.layer ? " ["+d.layer+"]" : ""}</span>
+                  <span class="src">#${d.step}</span>
+                </div>
+                <div class="src">${d.reason}</div>
+                <div class="src" style=${{ opacity: .7 }}>chose from: ${d.candidates.join(", ")}</div>
+              </div>`)}
+          </div>
+        ` : null}
+      </div>
+    </div>`;
+}
+
 function App() {
   const [meta, setMeta] = useState({});       // node_type -> metadata
   const [nodes, setNodes] = useState([]);
@@ -299,6 +340,9 @@ function App() {
             <h2>Per-node confidence (Plotly)</h2>
             <div class="body"><div ref=${plotRef}></div></div>
           </div>
+
+          <${RoutedCard} color=${color} />
+
 
           <div class="card">
             <h2>Views arriving with later build steps</h2>

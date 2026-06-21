@@ -15,9 +15,17 @@ from .registry import (
 from .connector import (
     Connector, PathwayResult, Hop, DEFAULT_PATHWAY, default_connector,
 )
+from .routing import (
+    Router, HeuristicRouter, LLMRouter, RouterAction, RouterDecision, RouterError,
+    RoutingState, RoutedConnector, RoutedResult, LAYER_ORDER, tool_spec, tool_specs,
+    default_routed_connector,
+)
 
 __all__ = [
     "Belief", "SCHEMA_VERSION", "Node",
     "register", "create", "all_node_types", "by_layer", "layers", "default_bank",
     "Connector", "PathwayResult", "Hop", "DEFAULT_PATHWAY", "default_connector",
+    "Router", "HeuristicRouter", "LLMRouter", "RouterAction", "RouterDecision",
+    "RouterError", "RoutingState", "RoutedConnector", "RoutedResult", "LAYER_ORDER",
+    "tool_spec", "tool_specs", "default_routed_connector",
 ]
