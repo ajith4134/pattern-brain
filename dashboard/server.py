@@ -12,9 +12,12 @@ emitting a belief stream, so this serves exactly that:
                           the living graph can animate belief-flow (the reason §8
                           chose a WebSocket backend).
 
-Domain-agnostic (Rule 23 / §8): everything here is generic node/belief data on a
-synthetic ``(T, D)`` sequence — no candles/order books. The stock-specific
-"Adapter View" tab is a later step (build-tracker step 3), never baked in here.
+Domain-agnostic core (Rule 23 / §8): the six core views above are generic
+node/belief data on a synthetic ``(T, D)`` sequence — no candles/order books.
+The ONLY stock-specific surface is the separate "Adapter View" (build-tracker
+step 3), served by ``GET /api/adapter`` and rendered in its own tab — candles
+in, generic ``(T, D)`` out, then the SAME core pathway runs on it. A future
+domain lights up the same core via a different adapter, only this tab changing.
 """
 from __future__ import annotations
 
@@ -82,6 +85,52 @@ def run() -> JSONResponse:
     """Run the pathway once on synthetic data; return the full auditable trace."""
     res = pb.default_connector().run(synthetic_sequence())
     return JSONResponse(res.to_dict())
+
+
+def synthetic_candles(T: int = 360, seed: int = 11):
+    """A synthetic OHLCV candle series (geometric random walk) — used ONLY by the
+    Adapter View to demonstrate the step-3 stock-data adapter. This is the one
+    place in the dashboard that touches a domain shape (Rule 23 / §8)."""
+    from pattern_brain.adapters import CandleSeries
+    rng = np.random.default_rng(seed)
+    ret = rng.normal(0, 0.012, T)
+    close = 100.0 * np.exp(np.cumsum(ret))
+    open_ = np.concatenate([[100.0], close[:-1]])
+    high = np.maximum(open_, close) * (1 + np.abs(rng.normal(0, 0.004, T)))
+    low = np.minimum(open_, close) * (1 - np.abs(rng.normal(0, 0.004, T)))
+    vol = rng.lognormal(mean=8.0, sigma=0.5, size=T)
+    ts = np.arange(T, dtype=float) * 60.0
+    return CandleSeries(open_, high, low, close, vol, timestamp=ts)
+
+
+@app.get("/api/adapter")
+def adapter() -> JSONResponse:
+    """Step-3 Adapter View: synthetic candles -> the StockDataAdapter -> the
+    generic ``(T, D)`` the core already wants -> the SAME default pathway runs on
+    it. Returns the candles (for the candlestick — the only stock-specific
+    visual), the emitted feature matrix, and the resulting pathway trace, so the
+    tab shows the whole "data bends to the system" handoff (PLAN.md §0)."""
+    from pattern_brain.adapters import StockDataAdapter
+    cs = synthetic_candles()
+    ad = StockDataAdapter()
+    X = ad.transform(cs)
+    res = pb.default_connector().run(X)
+    return JSONResponse({
+        "candles": {
+            "timestamp": cs.timestamp.tolist(),
+            "open": cs.open.tolist(),
+            "high": cs.high.tolist(),
+            "low": cs.low.tolist(),
+            "close": cs.close.tolist(),
+            "volume": cs.volume.tolist(),
+        },
+        "n_candles": len(cs),
+        "feature_names": ad.feature_names,
+        "features": X.tolist(),
+        "feature_shape": list(X.shape),
+        "pathway": res.pathway,
+        "trace": res.to_dict(),
+    })
 
 
 @app.websocket("/ws/run")

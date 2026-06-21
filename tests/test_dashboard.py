@@ -73,6 +73,27 @@ def test_run_endpoint():
     print(f"  GET /api/run -> {len(d['hops'])} hops, output={d['output']['type']}")
 
 
+def test_adapter_endpoint():
+    """Step-3 Adapter View: candles -> StockDataAdapter -> generic (T,D) -> the
+    SAME core pathway. The endpoint must return all three so the tab can show the
+    full handoff (PLAN.md §0)."""
+    r = client.get("/api/adapter")
+    check(r.status_code == 200, f"/api/adapter status {r.status_code}")
+    d = r.json()
+    check(d["n_candles"] > 0, "no candles returned")
+    for k in ("open", "high", "low", "close", "volume", "timestamp"):
+        check(len(d["candles"][k]) == d["n_candles"], f"candle column {k} length mismatch")
+    T, D = d["feature_shape"]
+    check(len(d["feature_names"]) == D, "feature_names != D")
+    check(len(d["features"]) == T and (T == 0 or len(d["features"][0]) == D),
+          "feature matrix shape mismatch")
+    check(d["pathway"] == DEFAULT_PATHWAY, "adapter pathway drifted from core")
+    check(d["trace"]["output"]["type"] == "decision",
+          "core did not produce a decision on adapter output")
+    print(f"  GET /api/adapter -> {d['n_candles']} candles -> (T,D)={d['feature_shape']} "
+          f"-> {d['trace']['output']['type']}")
+
+
 def test_ws_run_streams_start_hops_done():
     with client.websocket_connect("/ws/run") as ws:
         start = ws.receive_json()
@@ -100,6 +121,7 @@ def main():
     test_bank_endpoint()
     test_pathway_endpoint()
     test_run_endpoint()
+    test_adapter_endpoint()
     test_ws_run_streams_start_hops_done()
     print("=" * 70)
     if FAILS:

@@ -56,6 +56,17 @@
   .hint { color:var(--dim); font-size:11px; padding:0 14px 12px; }
   .legend { display:flex; flex-wrap:wrap; gap:8px; padding:8px 14px; font-size:11px; color:var(--dim); }
   .legend i { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:middle; }
+  .tabs { display:flex; gap:6px; }
+  .tab { background:var(--panel2); color:var(--dim); border:1px solid var(--line);
+         border-radius:6px; padding:6px 14px; font-weight:700; cursor:pointer; font-size:12px; }
+  .tab.active { background:var(--accent); color:#062018; border-color:var(--accent); }
+  .adapter-grid { display:grid; grid-template-columns:1fr 360px; gap:12px; padding:12px; }
+  .matrix { font-size:10px; max-height:240px; overflow:auto; }
+  .matrix table { border-collapse:collapse; width:100%; }
+  .matrix th { color:var(--dim); text-align:right; padding:2px 8px; position:sticky; top:0; background:var(--panel); }
+  .matrix td { text-align:right; padding:1px 8px; color:#bcd; }
+  .pill { display:inline-block; background:var(--panel2); border:1px solid var(--line);
+          border-radius:12px; padding:2px 10px; margin:2px; font-size:11px; color:var(--accent); }
 </style>
 </head>
 <body>
@@ -67,6 +78,94 @@ import htm from "htm";
 import ReactFlow, { Background, Controls, MarkerType } from "reactflow";
 
 const html = htm.bind(React.createElement);
+
+// --- Adapter View (build-tracker step 3) — the ONLY stock-specific tab (Rule 23).
+// Candles in -> StockDataAdapter -> generic (T,D) -> the SAME core pathway runs.
+function AdapterView() {
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const candleRef = React.useRef(null);
+
+  React.useEffect(() => {
+    fetch("/api/adapter").then(r => r.json()).then(setData).catch(e => setErr(String(e)));
+  }, []);
+
+  React.useEffect(() => {
+    if (!data || !candleRef.current || !window.Plotly) return;
+    const c = data.candles;
+    window.Plotly.react(candleRef.current, [{
+      type: "candlestick", x: c.timestamp,
+      open: c.open, high: c.high, low: c.low, close: c.close,
+      increasing: { line: { color: "#34d399" } }, decreasing: { line: { color: "#f87171" } },
+    }], {
+      margin: { l: 44, r: 8, t: 6, b: 24 }, height: 380,
+      paper_bgcolor: "transparent", plot_bgcolor: "transparent",
+      font: { color: "#8aa0c8", size: 10 },
+      xaxis: { gridcolor: "#26314f", rangeslider: { visible: false } },
+      yaxis: { gridcolor: "#26314f" },
+    }, { displayModeBar: false });
+  }, [data]);
+
+  if (err) return html`<div class="card"><div class="body"><span class="sub">adapter error: ${err}</span></div></div>`;
+  if (!data) return html`<div class="card"><div class="body"><span class="sub">loading adapter demo…</span></div></div>`;
+
+  const decision = (data.trace.hops || []).slice(-1)[0];
+  const rows = data.features.slice(0, 12);
+  return html`
+    <div class="adapter-grid">
+      <div class="col">
+        <div class="card">
+          <h2>Adapter View — stock candles (the ONLY domain-specific visual, Rule 23)</h2>
+          <div class="body"><div ref=${candleRef}></div></div>
+          <div class="hint">${data.n_candles} synthetic OHLCV candles. This candlestick is the one stock-specific surface; everything to the right is already the generic core.</div>
+        </div>
+        <div class="card">
+          <h2>Generic (T, D) handed to the SAME core — "the data bends to the system" (§0)</h2>
+          <div class="body">
+            <div style=${{ marginBottom: "8px" }}>
+              feature columns (D=${data.feature_shape[1]}, T=${data.feature_shape[0]}):
+              ${data.feature_names.map((f,i) => html`<span class="pill" key=${i}>${f}</span>`)}
+            </div>
+            <div class="matrix">
+              <table>
+                <thead><tr><th>t</th>${data.feature_names.map((f,i)=>html`<th key=${i}>${f}</th>`)}</tr></thead>
+                <tbody>
+                  ${rows.map((row,i) => html`<tr key=${i}><td style=${{color:"#8aa0c8"}}>${i}</td>${row.map((v,j)=>html`<td key=${j}>${v.toFixed(4)}</td>`)}</tr>`)}
+                </tbody>
+              </table>
+            </div>
+            <div class="hint" style=${{ padding: "8px 0 0" }}>first ${rows.length} of ${data.feature_shape[0]} rows — a finite (T, D) array identical in shape/contract to what the synthetic core uses.</div>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card">
+          <h2>Same pathway runs on adapted data</h2>
+          <div class="body">
+            <div class="kv"><span>pathway</span><span>${data.pathway.join(" → ")}</span></div>
+            <div class="kv"><span>terminal type</span><span>${decision ? decision.belief.type : "?"}</span></div>
+            <div class="kv"><span>action</span><span style=${{color:"#5eead4"}}>${decision ? (decision.belief.payload.action||"?") : "?"}</span></div>
+            <div class="kv"><span>confidence</span><span>${decision ? decision.belief.confidence.toFixed(3) : "?"}</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Belief stream on adapted candles</h2>
+          <div class="body stream">
+            ${(data.trace.hops||[]).map((h,i) => html`
+              <div class="belief" key=${i}>
+                <div class="top"><span class="type">${h.belief.type}${h.transformed ? " ⇄" : ""}</span>
+                  <span class="conf">conf ${h.belief.confidence.toFixed(3)}</span></div>
+                <div class="src">#${h.step} · ${h.belief.source}</div>
+              </div>`)}
+          </div>
+        </div>
+        <div class="card">
+          <h2>Rule 23 / §0 — portability</h2>
+          <div class="body"><span class="sub">A future domain plugs in a different adapter and lights up the same core views — only this tab changes. The candlestick is the sole stock-specific element on the whole dashboard.</span></div>
+        </div>
+      </div>
+    </div>`;
+}
 
 // Functional-layer colours (Block 18 ordering) — generic, no domain meaning.
 const LAYER_COLOR = {
@@ -96,6 +195,7 @@ function App() {
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [view, setView] = useState("core");   // "core" | "adapter" (step-3 tab)
   const plotRef = useRef(null);
 
   // Load the hardcoded pathway + node metadata on mount.
@@ -162,14 +262,21 @@ function App() {
   return html`
     <div>
       <header>
-        <h1>🧠 Pattern Brain — Living Graph</h1>
-        <span class="sub">build-tracker step 2 · Connector Intelligence v0 (walking skeleton)</span>
+        <h1>🧠 Pattern Brain</h1>
+        <div class="tabs">
+          <button class=${"tab" + (view==="core" ? " active" : "")} onClick=${() => setView("core")}>Core (Living Graph)</button>
+          <button class=${"tab" + (view==="adapter" ? " active" : "")} onClick=${() => setView("adapter")}>Adapter View (stock)</button>
+        </div>
+        <span class="sub">${view==="core" ? "step 2 · Connector Intelligence v0" : "step 3 · stock-data adapter (Rule 23)"}</span>
         <div style=${{ marginLeft: "auto", display: "flex", gap: "12px", alignItems: "center" }}>
-          <span class="sub">${done ? "✓ run complete" : running ? "● running…" : "idle"}</span>
-          <button onClick=${start} disabled=${running}>${running ? "running…" : "▶ Run pathway"}</button>
+          ${view==="core" ? html`
+            <span class="sub">${done ? "✓ run complete" : running ? "● running…" : "idle"}</span>
+            <button onClick=${start} disabled=${running}>${running ? "running…" : "▶ Run pathway"}</button>
+          ` : null}
         </div>
       </header>
 
+      ${view === "adapter" ? html`<${AdapterView} />` : html`
       <div class="wrap">
         <div class="col">
           <div class="card">
@@ -200,7 +307,7 @@ function App() {
               <div class="f"><b>Evaluator / Test panel</b>walk-forward splits, DSR/PSR, NSGA-II Pareto — needs the evaluator (final phase)</div>
               <div class="f"><b>World Model ribbon</b>detected regime timeline — needs regime routing (step 4)</div>
               <div class="f"><b>Evolution feed</b>candidates born→tested→promoted — needs Features 1/2/3 (final phase)</div>
-              <div class="f"><b>Adapter View (stock)</b>candles/order-book — the ONLY stock-specific tab; needs the data adapter (step 3, Rule 23)</div>
+              <div class="f" style=${{ opacity: 1, borderStyle: "solid" }}><b style=${{ color: "#5eead4" }}>Adapter View (stock) ✓</b>built (step 3) — see the tab above; the ONLY stock-specific tab (Rule 23)</div>
               <div class="f"><b>Genome map</b>the full ~500-algorithm bank (Block 42) — needs step 6 + Sigma.js at scale</div>
             </div>
           </div>
@@ -239,6 +346,7 @@ function App() {
           </div>
         </div>
       </div>
+      `}
     </div>`;
 }
 

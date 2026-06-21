@@ -154,15 +154,22 @@ def test_behaviors():
 
 
 def test_domain_independence():
-    """Rule 23: no node couples to a stock-specific data shape. We inspect code
-    *identifiers* only (via tokenize), not docstrings/comments — the prose
-    legitimately mentions candles/order books to explain what the code avoids."""
+    """Rule 23: no CORE node couples to a stock-specific data shape. We inspect
+    code *identifiers* only (via tokenize), not docstrings/comments — the prose
+    legitimately mentions candles/order books to explain what the code avoids.
+
+    The ``adapters/`` subpackage is excluded: per Rule 23 / PLAN.md §0 it is the
+    ONE sanctioned home for domain code (candles live there on purpose). Its own
+    separation is enforced separately in test_adapter.py — generic numeric tools
+    stay domain-free, and the core never imports the adapter."""
     import tokenize
     forbidden = ("candle", "ohlcv", "orderbook", "order_book")
     root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "pattern_brain")
     hits = []
-    for dirpath, _, files in os.walk(root):
+    for dirpath, dirnames, files in os.walk(root):
+        if "adapters" in dirnames:
+            dirnames.remove("adapters")  # sanctioned domain home — scanned by test_adapter.py
         for fn in files:
             if not fn.endswith(".py"):
                 continue
