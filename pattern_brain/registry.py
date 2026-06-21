@@ -44,6 +44,27 @@ def by_layer(layer: str) -> List[str]:
     return sorted(nt for nt, cls in _REGISTRY.items() if cls.layer == layer)
 
 
+def genome_manifest() -> Dict[str, object]:
+    """The "Model Genome Library" deliverable (resolves §7's open 'cpu ml models'
+    format question): a JSON-serializable manifest of the whole bank — every
+    node's metadata, grouped by layer — plus the requirements needed to
+    materialize it. The deliverable is the catalog + a build recipe (manifest +
+    requirements), NOT committed weight files: every node here is constructed on
+    demand from light deps (numpy/scipy/sklearn) or optional torch."""
+    nodes = [n.metadata() for n in default_bank()]
+    return {
+        "schema": "pattern-brain/genome-manifest@1",
+        "n_nodes": len(nodes),
+        "layers": layers(),
+        "by_layer": {l: by_layer(l) for l in layers()},
+        "nodes": nodes,
+        "requirements": {
+            "light": ["numpy>=1.26", "scipy>=1.11", "scikit-learn>=1.4"],
+            "deep_optional": ["torch>=2.2"],
+        },
+    }
+
+
 def default_bank() -> List[Node]:
     """One default instance of every registered node, ordered by functional layer
     (Block 18: signal -> noise -> pattern -> sequence -> probability -> equation

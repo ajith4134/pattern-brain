@@ -1098,3 +1098,17 @@ Slice 2 of "all 3". The step-4 `LLMRouter` already ran the tool-calling loop aga
 **Concrete opinion (Rule 10):** the right design is auto-detect + graceful fallback, not a hardcoded backend — the owner can turn on a real LLM simply by running Ollama or setting `ANTHROPIC_API_KEY`, with zero code change, and everything (tests, dashboard) keeps working when neither is present. Defaulting to local Ollama first respects the project's separation/privacy posture; cloud Anthropic is the explicit opt-in.
 
 Rules applied: 1, 2, 4, 9, 10, 18, 19 (imported discipline), 20, 21, 23, 24, 25.
+
+## BLOCK 55 — Post-plan: resolved the three remaining §7 open decisions (2026-06-21)
+
+Slice 3 of "all 3" — closing the last open questions in the plan with concrete decisions (Rule 10), each with light implementation + a test, not just prose:
+
+1. **"cpu ml models" deliverable format — RESOLVED: it IS the Model Genome Library, as a manifest + build recipe, NOT committed weights.** `registry.genome_manifest()` emits a JSON manifest of the whole bank (every node's metadata grouped by layer) + the `requirements` (light numpy/scipy/sklearn + optional torch) to materialize it. Since every node is built on demand, there are no weight files to ship — the catalog + recipe is the artifact. Confirms the §5/§6 link that was previously only flagged.
+2. **Sub-agent personas — RESOLVED: yes, each engine gets a defined role-persona** (`pattern_brain/personas.py`): Feature 1 = The Breeder, Feature 3 = The Architect, Feature 2 = The Inventor, alongside the Connector's The Synthesist (§3). Attached via `Evolver.persona`; used as the agent's voice when it drives an LLM. Differentiated roles (Rule 17) rather than one undifferentiated agent.
+3. **Step-10 framing — RESOLVED: the slots ARE function-level.** The bank's 8 functional layers (signal/noise/.../rl = Block-16 Layer-1 categories) are exactly the slots Feature 3 connects; any algorithm is an interchangeable filler (every layer holds ≥2). `PathwayEvolver` already wires nodes by layer and swaps the algorithm filling each function slot — so it's function-level by construction; no rework.
+
+**Evidence:** `tests/test_decisions.py` green (manifest structure + serialization; all four personas defined + distinct; each engine carries its persona; 8 function-level slots each with ≥2 interchangeable algorithms). All 12 suites green on both interpreters.
+
+**Concrete opinion (Rule 10):** with these resolved, `PLAN.md` has NO open `❓` decisions left — every numbered build step is implemented and every deferred question is decided. The plan is, as written, complete. Further work from here is genuinely new scope (e.g. a second data-domain adapter to prove §0 portability, the §8 view #1 reputation-coloured live edges, a real LLM turned on by running Ollama, or wiring the scheduled-research routine) rather than anything still pending in the plan.
+
+Rules applied: 1, 2, 4, 9, 10, 16, 18, 19 (imported discipline), 20, 21, 22, 23, 24, 25.

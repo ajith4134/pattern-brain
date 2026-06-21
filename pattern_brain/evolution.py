@@ -137,6 +137,12 @@ class Evolver:
 
     feature = "evolver"
 
+    @property
+    def persona(self):
+        """This engine's defined role-persona (Rule 17/19; §3/§7)."""
+        from .personas import persona_for
+        return persona_for(self.feature)
+
     def __init__(self, evaluator: Optional[Evaluator] = None, population: int = 8,
                  generations: int = 4, elite: int = 3, seed: int = 0,
                  psr_threshold: float = 0.55) -> None:

@@ -10,8 +10,9 @@ from .belief import Belief, SCHEMA_VERSION
 from .node import Node
 from . import nodes  # noqa: F401  (import for side effect: registers built-in nodes)
 from .registry import (
-    register, create, all_node_types, by_layer, layers, default_bank,
+    register, create, all_node_types, by_layer, layers, default_bank, genome_manifest,
 )
+from .personas import Persona, PERSONAS, persona_for, all_personas
 from .connector import (
     Connector, PathwayResult, Hop, DEFAULT_PATHWAY, default_connector,
 )
@@ -49,6 +50,7 @@ from .llm import (
 __all__ = [
     "Belief", "SCHEMA_VERSION", "Node",
     "register", "create", "all_node_types", "by_layer", "layers", "default_bank",
+    "genome_manifest", "Persona", "PERSONAS", "persona_for", "all_personas",
     "Connector", "PathwayResult", "Hop", "DEFAULT_PATHWAY", "default_connector",
     "Router", "HeuristicRouter", "LLMRouter", "RouterAction", "RouterDecision",
     "RouterError", "RoutingState", "RoutedConnector", "RoutedResult", "LAYER_ORDER",
