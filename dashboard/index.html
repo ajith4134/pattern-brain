@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pattern Brain — Living Graph (step 2)</title>
+<link rel="stylesheet" href="https://esm.sh/reactflow@11/dist/style.css" />
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.3.1",
+    "react-dom": "https://esm.sh/react-dom@18.3.1",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+    "htm": "https://esm.sh/htm@3.1.1",
+    "reactflow": "https://esm.sh/reactflow@11.11.4?external=react,react-dom"
+  }
+}
+</script>
+<style>
+  :root { --bg:#0b1020; --panel:#121a30; --panel2:#0f1628; --line:#26314f;
+          --txt:#e6ecff; --dim:#8aa0c8; --accent:#5eead4; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  header { padding:14px 20px; border-bottom:1px solid var(--line);
+           display:flex; align-items:center; gap:16px; }
+  header h1 { font-size:16px; margin:0; letter-spacing:.5px; }
+  header .sub { color:var(--dim); font-size:12px; }
+  button { background:var(--accent); color:#062018; border:0; border-radius:6px;
+           padding:8px 16px; font-weight:700; cursor:pointer; font-family:inherit; }
+  button:disabled { opacity:.4; cursor:default; }
+  .wrap { display:grid; grid-template-columns: 1fr 360px; gap:12px; padding:12px; }
+  .col { display:flex; flex-direction:column; gap:12px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+  .card h2 { font-size:12px; text-transform:uppercase; letter-spacing:1px;
+             color:var(--dim); margin:0; padding:10px 14px; border-bottom:1px solid var(--line); }
+  .card .body { padding:12px 14px; }
+  #graph { height:420px; }
+  .belief { border:1px solid var(--line); border-radius:8px; padding:8px 10px;
+            margin-bottom:8px; background:var(--panel2); font-size:12px; }
+  .belief .top { display:flex; justify-content:space-between; margin-bottom:4px; }
+  .belief .type { font-weight:700; }
+  .belief .conf { color:var(--accent); }
+  .belief .src { color:var(--dim); }
+  .belief pre { margin:6px 0 0; white-space:pre-wrap; word-break:break-word;
+                color:#bcd; font-size:11px; max-height:90px; overflow:auto; }
+  .stream { max-height:360px; overflow:auto; }
+  .kv { display:flex; justify-content:space-between; font-size:12px; padding:3px 0;
+        border-bottom:1px dotted var(--line); }
+  .kv span:first-child { color:var(--dim); }
+  .future { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .future .f { border:1px dashed var(--line); border-radius:8px; padding:10px;
+               color:var(--dim); font-size:11px; opacity:.7; }
+  .future .f b { color:var(--txt); display:block; margin-bottom:3px; }
+  .hint { color:var(--dim); font-size:11px; padding:0 14px 12px; }
+  .legend { display:flex; flex-wrap:wrap; gap:8px; padding:8px 14px; font-size:11px; color:var(--dim); }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:middle; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module">
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { createRoot } from "react-dom/client";
+import htm from "htm";
+import ReactFlow, { Background, Controls, MarkerType } from "reactflow";
+
+const html = htm.bind(React.createElement);
+
+// Functional-layer colours (Block 18 ordering) — generic, no domain meaning.
+const LAYER_COLOR = {
+  signal:"#38bdf8", noise:"#a78bfa", pattern:"#f472b6", sequence:"#34d399",
+  probability:"#fbbf24", equation:"#fb923c", decision:"#f87171", rl:"#22d3ee",
+};
+const color = (l) => LAYER_COLOR[l] || "#94a3b8";
+
+function nodeStyle(layer, fired) {
+  const c = color(layer);
+  return {
+    background: fired ? c : "#1b2540",
+    color: fired ? "#06121f" : "#cbd5f5",
+    border: `2px solid ${c}`,
+    borderRadius: 10, padding: "8px 12px", fontSize: 12, fontWeight: 700,
+    width: 150, textAlign: "center",
+    boxShadow: fired ? `0 0 18px ${c}` : "none",
+    transition: "all .35s ease",
+  };
+}
+
+function App() {
+  const [meta, setMeta] = useState({});       // node_type -> metadata
+  const [nodes, setNodes] = useState([]);
+  const [edges, setEdges] = useState([]);
+  const [beliefs, setBeliefs] = useState([]); // ordered belief stream
+  const [running, setRunning] = useState(false);
+  const [done, setDone] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const plotRef = useRef(null);
+
+  // Load the hardcoded pathway + node metadata on mount.
+  useEffect(() => {
+    fetch("/api/pathway").then(r => r.json()).then(d => {
+      const m = {}; d.nodes.forEach(n => { m[n.node_type] = n; });
+      setMeta(m);
+      buildGraph(d.pathway, m, {});
+    });
+  }, []);
+
+  function buildGraph(pathway, m, fired) {
+    setNodes(pathway.map((nt, i) => ({
+      id: String(i),
+      position: { x: i * 210 + 20, y: 150 },
+      data: { label: `${nt}\n[${(m[nt]||{}).layer||"?"}]`, node_type: nt },
+      style: nodeStyle((m[nt]||{}).layer, !!fired[i]),
+      sourcePosition: "right", targetPosition: "left",
+    })));
+    setEdges(pathway.slice(1).map((nt, i) => ({
+      id: `e${i}`, source: String(i), target: String(i+1),
+      animated: !!fired[i+1],
+      style: { stroke: fired[i+1] ? color((m[nt]||{}).layer) : "#33406a", strokeWidth: fired[i+1] ? 3 : 1.5 },
+      markerEnd: { type: MarkerType.ArrowClosed },
+    })));
+  }
+
+  const start = useCallback(() => {
+    setBeliefs([]); setDone(false); setRunning(true); setSelected(null);
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${proto}://${location.host}/ws/run`);
+    let pathway = []; const fired = {}; const confs = [];
+    ws.onmessage = (ev) => {
+      const msg = JSON.parse(ev.data);
+      if (msg.event === "start") { pathway = msg.pathway; buildGraph(pathway, meta, {}); }
+      else if (msg.event === "hop") {
+        const h = msg.hop; fired[h.step] = true;
+        buildGraph(pathway, meta, { ...fired });
+        setBeliefs(prev => [...prev, { ...h.belief, _step: h.step, _transformed: h.transformed }]);
+        confs.push({ name: h.node_type, conf: h.belief.confidence });
+        drawPlot(confs);
+      } else if (msg.event === "done") { setRunning(false); setDone(true); }
+    };
+    ws.onerror = () => setRunning(false);
+    ws.onclose = () => setRunning(false);
+  }, [meta]);
+
+  function drawPlot(confs) {
+    if (!plotRef.current || !window.Plotly) return;
+    window.Plotly.react(plotRef.current, [{
+      type: "bar", orientation: "h",
+      x: confs.map(c => c.conf), y: confs.map(c => c.name),
+      marker: { color: "#5eead4" },
+    }], {
+      margin: { l: 110, r: 10, t: 6, b: 24 }, height: 150,
+      paper_bgcolor: "transparent", plot_bgcolor: "transparent",
+      font: { color: "#8aa0c8", size: 10 },
+      xaxis: { range: [0, 1], gridcolor: "#26314f", title: "confidence" },
+    }, { displayModeBar: false });
+  }
+
+  const onNodeClick = (_e, n) => setSelected(meta[n.data.node_type] || null);
+
+  return html`
+    <div>
+      <header>
+        <h1>🧠 Pattern Brain — Living Graph</h1>
+        <span class="sub">build-tracker step 2 · Connector Intelligence v0 (walking skeleton)</span>
+        <div style=${{ marginLeft: "auto", display: "flex", gap: "12px", alignItems: "center" }}>
+          <span class="sub">${done ? "✓ run complete" : running ? "● running…" : "idle"}</span>
+          <button onClick=${start} disabled=${running}>${running ? "running…" : "▶ Run pathway"}</button>
+        </div>
+      </header>
+
+      <div class="wrap">
+        <div class="col">
+          <div class="card">
+            <h2>Living Graph — belief flows left→right along the hardcoded pathway</h2>
+            <div id="graph">
+              <${ReactFlow} nodes=${nodes} edges=${edges} onNodeClick=${onNodeClick}
+                            fitView proOptions=${{ hideAttribution: true }}
+                            nodesDraggable=${false} nodesConnectable=${false}>
+                <${Background} color="#26314f" gap=${20} />
+                <${Controls} showInteractive=${false} />
+              <//>
+            </div>
+            <div class="legend">
+              ${Object.keys(LAYER_COLOR).map(l => html`<span key=${l}><i style=${{ background: color(l) }}></i>${l}</span>`)}
+            </div>
+            <div class="hint">A node glows when it fires; the edge into it animates as the signal bus is handed on (transformer nodes rewrite the bus, others tap it). Click a node to inspect it.</div>
+          </div>
+
+          <div class="card">
+            <h2>Per-node confidence (Plotly)</h2>
+            <div class="body"><div ref=${plotRef}></div></div>
+          </div>
+
+          <div class="card">
+            <h2>Views arriving with later build steps</h2>
+            <div class="body future">
+              <div class="f"><b>Pathway Leaderboard</b>regime-split reputation per pathway — needs Feature 3 (final phase)</div>
+              <div class="f"><b>Evaluator / Test panel</b>walk-forward splits, DSR/PSR, NSGA-II Pareto — needs the evaluator (final phase)</div>
+              <div class="f"><b>World Model ribbon</b>detected regime timeline — needs regime routing (step 4)</div>
+              <div class="f"><b>Evolution feed</b>candidates born→tested→promoted — needs Features 1/2/3 (final phase)</div>
+              <div class="f"><b>Adapter View (stock)</b>candles/order-book — the ONLY stock-specific tab; needs the data adapter (step 3, Rule 23)</div>
+              <div class="f"><b>Genome map</b>the full ~500-algorithm bank (Block 42) — needs step 6 + Sigma.js at scale</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col">
+          <div class="card">
+            <h2>Node Inspector</h2>
+            <div class="body">
+              ${selected ? html`
+                <div class="kv"><span>node_type</span><span>${selected.node_type}</span></div>
+                <div class="kv"><span>layer</span><span style=${{ color: color(selected.layer) }}>${selected.layer}</span></div>
+                <div class="kv"><span>requires_y</span><span>${String(selected.requires_y)}</span></div>
+                <div class="kv"><span>is_transformer</span><span>${String(selected.is_transformer)}</span></div>
+                <div class="kv"><span>params</span><span>${JSON.stringify(selected.params)}</span></div>
+              ` : html`<span class="sub">Click a node in the graph to see its Model-Genome metadata.</span>`}
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Belief-space stream (auditable, JSON)</h2>
+            <div class="body stream">
+              ${beliefs.length === 0 ? html`<span class="sub">Press “Run pathway” to stream beliefs as each node fires.</span>` : null}
+              ${beliefs.map((b, i) => html`
+                <div class="belief" key=${i}>
+                  <div class="top">
+                    <span class="type" style=${{ color: color((meta[b.source]||{}).layer) }}>${b.type}${b._transformed ? " ⇄" : ""}</span>
+                    <span class="conf">conf ${b.confidence.toFixed(3)}</span>
+                  </div>
+                  <div class="src">#${b._step} · ${b.source} · schema ${b.schema_version}</div>
+                  <pre>${JSON.stringify(
+                      Object.fromEntries(Object.entries(b.payload).filter(([,v]) => !Array.isArray(v))),
+                      null, 1)}</pre>
+                </div>`)}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+createRoot(document.getElementById("root")).render(html`<${App} />`);
+</script>
+</body>
+</html>

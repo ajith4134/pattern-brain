@@ -1,0 +1,117 @@
+"""Pattern Brain dashboard — backend (build-tracker step 2, §8 walking skeleton).
+
+A FastAPI app dedicated ONLY to Pattern Brain (no trading-bot coupling, Rule 1).
+At step 2 the only live data is the Connector running one hardcoded pathway and
+emitting a belief stream, so this serves exactly that:
+
+* ``GET  /``            -> the single-file React dashboard.
+* ``GET  /api/bank``    -> the model-bank genome (every node's metadata, by layer).
+* ``GET  /api/pathway`` -> the step-2 hardcoded pathway + its nodes' metadata.
+* ``GET  /api/run``     -> run the pathway once on synthetic data, full trace.
+* ``WS   /ws/run``      -> run the pathway, streaming each hop as it completes so
+                          the living graph can animate belief-flow (the reason §8
+                          chose a WebSocket backend).
+
+Domain-agnostic (Rule 23 / §8): everything here is generic node/belief data on a
+synthetic ``(T, D)`` sequence — no candles/order books. The stock-specific
+"Adapter View" tab is a later step (build-tracker step 3), never baked in here.
+"""
+from __future__ import annotations
+
+import asyncio
+import os
+import sys
+
+import numpy as np
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import pattern_brain as pb  # noqa: E402
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+INDEX = os.path.join(HERE, "index.html")
+
+app = FastAPI(title="Pattern Brain — Living Graph (step 2 walking skeleton)")
+
+
+def synthetic_sequence(T: int = 240, D: int = 3, seed: int = 7) -> np.ndarray:
+    """A generic regime-switching multivariate sequence (no domain meaning)."""
+    rng = np.random.default_rng(seed)
+    t = np.arange(T)
+    X = np.zeros((T, D))
+    third = T // 3
+    X[:third] = (0.05 * t[:third])[:, None] + rng.normal(0, 0.3, (third, D))
+    X[third:2 * third] = rng.normal(0, 0.6, (third, D))
+    X[2 * third:] = np.sin(0.35 * t[2 * third:])[:, None] + rng.normal(0, 0.2, (T - 2 * third, D))
+    return X
+
+
+@app.get("/")
+def index() -> FileResponse:
+    return FileResponse(INDEX)
+
+
+@app.get("/api/bank")
+def bank() -> JSONResponse:
+    """The model-genome map: one metadata record per registered node, grouped by
+    functional layer (the precursor to §8's full genome view)."""
+    nodes = [n.metadata() for n in pb.default_bank()]
+    return JSONResponse({
+        "layers": pb.layers(),
+        "n_nodes": len(nodes),
+        "nodes": nodes,
+    })
+
+
+@app.get("/api/pathway")
+def pathway() -> JSONResponse:
+    """The step-2 hardcoded pathway and each node's metadata, in order."""
+    conn = pb.default_connector()
+    meta = {n["node_type"]: n for n in (pb.create(nt).metadata() for nt in conn.pathway)}
+    return JSONResponse({
+        "name": conn.name,
+        "pathway": conn.pathway,
+        "nodes": [meta[nt] for nt in conn.pathway],
+    })
+
+
+@app.get("/api/run")
+def run() -> JSONResponse:
+    """Run the pathway once on synthetic data; return the full auditable trace."""
+    res = pb.default_connector().run(synthetic_sequence())
+    return JSONResponse(res.to_dict())
+
+
+@app.websocket("/ws/run")
+async def ws_run(ws: WebSocket) -> None:
+    """Stream the pathway run hop-by-hop so the living graph animates belief-flow.
+    Protocol: a ``start`` frame (the pathway), one ``hop`` frame per node as it
+    fires, then a ``done`` frame with the terminal output."""
+    await ws.accept()
+    try:
+        conn = pb.default_connector()
+        X = synthetic_sequence()
+        await ws.send_json({"event": "start", "pathway": conn.pathway})
+        last = None
+        for hop in conn.iter_run(X):
+            await ws.send_json({"event": "hop", "hop": hop.to_dict()})
+            last = hop
+            await asyncio.sleep(0.6)  # pace the animation; the math itself is instant
+        await ws.send_json({
+            "event": "done",
+            "output": last.belief.to_dict() if last else None,
+        })
+    except WebSocketDisconnect:
+        return
+    finally:
+        try:
+            await ws.close()
+        except RuntimeError:
+            pass
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8077)

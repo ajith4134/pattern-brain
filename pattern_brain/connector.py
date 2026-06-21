@@ -116,13 +116,12 @@ class Connector:
         self._nodes: List[Node] = [n if isinstance(n, Node) else create(n) for n in pathway]
         self.pathway: List[str] = [n.node_type for n in self._nodes]
 
-    def run(self, X: Any, y: Optional[Any] = None) -> PathwayResult:
-        """Thread ``X`` (the signal bus) through every node in order, recording
-        each node's Belief into the stream and rewriting the bus at transformer
-        nodes. Returns the full auditable :class:`PathwayResult`."""
+    def iter_run(self, X: Any, y: Optional[Any] = None):
+        """Thread ``X`` (the signal bus) through the nodes, yielding each
+        :class:`Hop` the moment it completes. This is the streaming source the
+        §8 dashboard's WebSocket consumes to animate belief-flow live; `run()`
+        below is just this generator collected into a result."""
         bus = X
-        hops: List[Hop] = []
-        t_start = time.perf_counter()
         for i, node in enumerate(self._nodes):
             t0 = time.perf_counter()
             belief = node.process(bus, y) if node.requires_y else node.process(bus)
@@ -131,8 +130,15 @@ class Connector:
                 bus = node.transform(bus)   # already fitted by process(); rewrites bus
                 transformed = True
             elapsed = (time.perf_counter() - t0) * 1000.0
-            hops.append(Hop(i, node.node_type, node.name, node.layer,
-                            belief, transformed, elapsed))
+            yield Hop(i, node.node_type, node.name, node.layer,
+                      belief, transformed, elapsed)
+
+    def run(self, X: Any, y: Optional[Any] = None) -> PathwayResult:
+        """Thread ``X`` (the signal bus) through every node in order, recording
+        each node's Belief into the stream and rewriting the bus at transformer
+        nodes. Returns the full auditable :class:`PathwayResult`."""
+        t_start = time.perf_counter()
+        hops: List[Hop] = list(self.iter_run(X, y))
         total = (time.perf_counter() - t_start) * 1000.0
         return PathwayResult(
             pathway=list(self.pathway),

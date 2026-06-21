@@ -1,0 +1,8 @@
+# Pattern Brain — §8 dashboard backend dependencies (build-tracker step 2
+# cross-cutting track, Block 43). Separate from requirements.txt (the model
+# bank's light numpy/scipy/sklearn stack) because the dashboard is an optional
+# layer on top, not a model-bank dependency.
+fastapi>=0.110
+uvicorn>=0.29
+websockets>=12.0
+httpx>=0.27          # used by fastapi.testclient.TestClient (tests/test_dashboard.py)

@@ -146,6 +146,27 @@ def test_unknown_node_and_empty_pathway():
     print("  validation: unknown node -> KeyError, empty pathway -> ValueError")
 
 
+def test_iter_run_streams_hops_matching_run():
+    """``iter_run`` (added for the §8 dashboard's WebSocket, Block 43) must yield
+    the identical hop sequence ``run`` collects — it's a generator wrapping the
+    same execution, not a second code path that could drift from it."""
+    X = make_synth()
+    streamed = list(default_connector().iter_run(X))
+    collected = default_connector().run(X).hops
+
+    check(len(streamed) == len(DEFAULT_PATHWAY), "iter_run hop count mismatch")
+    check([h.node_type for h in streamed] == [h.node_type for h in collected],
+          "iter_run node order diverges from run()")
+    check([h.transformed for h in streamed] == [h.transformed for h in collected],
+          "iter_run transform flags diverge from run()")
+    check([h.belief.type for h in streamed] == [h.belief.type for h in collected],
+          "iter_run belief types diverge from run()")
+    check(streamed[-1].belief.payload.get("action")
+          == collected[-1].belief.payload.get("action"),
+          "iter_run terminal action diverges from run()")
+    print("  iter_run: streaming generator matches run()'s collected hops")
+
+
 def test_domain_independence():
     """Rule 23: the connector couples to no stock-specific data shape. Inspect
     code identifiers only (tokenize), not docstrings — prose legitimately names
@@ -174,6 +195,7 @@ def main():
     test_signal_bus_is_threaded()
     test_accepts_instances_and_1d()
     test_unknown_node_and_empty_pathway()
+    test_iter_run_streams_hops_matching_run()
     test_domain_independence()
     print("=" * 70)
     if FAILS:

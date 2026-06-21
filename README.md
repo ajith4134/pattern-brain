@@ -4,9 +4,17 @@ A standalone research/architecture project — explicitly **not connected to the
 
 **Scope:** researching ML/statistical model families for pattern-finding, sequence prediction, probability estimation, noise/signal separation, and synthetic data generation, plus the harder architectural problem of letting many heterogeneous models share input data and exchange outputs (a "universal data translator" + "universal belief space / connector intelligence" design).
 
-**Status:** **implementation started 2026-06-20.** Build-tracker **step 1 (starter model bank) is complete** — see `pattern_brain/`. The rest of the build order is in `PLAN.md`. See `DISCUSSION_NOTES.md` for the full, growing record of every idea discussed (owner's and Claude's). See `RULES.md` for how this project is run.
+**Status:** **implementation started 2026-06-20.** Build-tracker **steps 1 (starter model bank) and 2 (Connector Intelligence v0 + the §8 dashboard walking skeleton) are complete** — see `pattern_brain/` and `dashboard/`. The rest of the build order is in `PLAN.md`. See `DISCUSSION_NOTES.md` for the full, growing record of every idea discussed (owner's and Claude's). See `RULES.md` for how this project is run.
 
-**Code (`pattern_brain/`):** a domain-independent model bank. Every node operates on a generic `(T, D)` sequence and emits a `Belief` through one common interface (`fit`/`predict`/`transform`/`process`) — zero candle/order-book coupling (Rule 23). **30 node types across 8 functional layers** (signal, noise, pattern, sequence, probability, equation, decision, rl). Run `python3 demo.py` to watch the whole bank work on a synthetic sequence, or `python3 tests/test_bank.py` for the contract + behavior suite. Language policy is polyglot by stage (`PLAN.md` §0b): Python now, C/C++ for proven hot paths later. Deps: `requirements.txt` (numpy/scipy/scikit-learn).
+**Code (`pattern_brain/`):** a domain-independent model bank. Every node operates on a generic `(T, D)` sequence and emits a `Belief` through one common interface (`fit`/`predict`/`transform`/`process`) — zero candle/order-book coupling (Rule 23). **30 node types across 8 functional layers** (signal, noise, pattern, sequence, probability, equation, decision, rl). Run `python3 demo.py` to watch the whole bank work on a synthetic sequence, or `python3 tests/test_bank.py` for the contract + behavior suite. `pattern_brain/connector.py` adds Connector Intelligence v0: one fixed, hardcoded pathway (`difference -> hdbscan -> gaussian_hmm -> threshold_policy`) threaded end-to-end through the Universal Belief Space — `python3 run_pathway.py` for the terminal view, `python3 tests/test_connector.py` for its tests. Language policy is polyglot by stage (`PLAN.md` §0b): Python now, C/C++ for proven hot paths later. Deps: `requirements.txt` (numpy/scipy/scikit-learn).
+
+**Dashboard (`dashboard/`):** the §8 living-graph dashboard, ratified stack (Block 43): a FastAPI backend + a single-file React/ReactFlow/Plotly frontend (loaded via esm.sh + an import map — no build step). Watches Connector v0's hardcoded pathway run, hop by hop, over a WebSocket — nodes glow as they fire, edges animate, a belief-space stream and per-node confidence chart update live, and clicking a node opens its Model-Genome metadata. Domain-agnostic (Rule 23): synthetic `(T, D)` data only, no candles. Setup (separate venv — these deps aren't in the model bank's `requirements.txt`):
+```
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt -r requirements-dashboard.txt
+.venv/bin/python dashboard/server.py        # serves http://127.0.0.1:8077
+.venv/bin/python tests/test_dashboard.py    # contract + behavior suite (no live server needed)
+```
 
 **Planned features (added 2026-06-20, spec in `DISCUSSION_NOTES.md` Block 14):**
 1. **ML Model Creation + Mutation** — create new instances of existing model families and evolve/mutate already-trained models (hyperparameters, architecture tweaks, partial retraining, crossover between two trained models), gated by an automatic evaluator before any mutation replaces an incumbent.
@@ -22,6 +30,10 @@ A standalone research/architecture project — explicitly **not connected to the
 - `RULES.md` — the rules this project runs by (kept separate from content, per Rule 3).
 - `DISCUSSION_NOTES.md` — single growing log of every discussion (Rule 2/4).
 - `PLAN.md` — current decision state: what's actually decided/planned/proposed/open, and (once building starts) implementation progress in order (Rule 21/22).
+- `pattern_brain/` — the model bank + Connector Intelligence v0 (build steps 1-2).
+- `dashboard/` — the §8 living-graph dashboard (FastAPI + React/ReactFlow/Plotly).
+- `tests/` — contract + behavior suites (`test_bank.py`, `test_connector.py`, `test_dashboard.py`).
+- `requirements.txt` / `requirements-dashboard.txt` — model-bank deps vs. dashboard-only deps, kept separate so the core bank stays light.
 
 All future files for this project — code, data, deliverables — go here too, per Rule 1 in `RULES.md`.
 
