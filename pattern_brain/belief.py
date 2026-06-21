@@ -36,8 +36,9 @@ class Belief:
     source : str
         The name of the node that produced this belief.
     schema_version : str
-        Interlingua version (Block 7g). A minimal version field today; the full
-        versioning/drift scheme is build-tracker step 5.
+        Interlingua version (Block 7g). The full versioning/drift/migration scheme
+        lives in ``pattern_brain.interlingua`` (build-tracker step 5); this field
+        is the version stamp it reads. ``INTERLINGUA_VERSION`` == this default.
     """
 
     type: str

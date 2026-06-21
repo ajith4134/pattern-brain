@@ -228,6 +228,42 @@ function RoutedCard({ color }) {
     </div>`;
 }
 
+// --- Interlingua conformance (build-tracker step 5). The versioned shared-belief
+// contract made visible: drift report over a run + coherence over the bank.
+function InterlinguaCard() {
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  React.useEffect(() => {
+    fetch("/api/conformance").then(r => r.json()).then(setData).catch(e => setErr(String(e)));
+  }, []);
+  return html`
+    <div class="card">
+      <h2>Interlingua conformance (step 5: versioned belief contract)</h2>
+      <div class="body">
+        ${err ? html`<span class="sub">conformance error: ${err}</span>` : null}
+        ${!data && !err ? html`<span class="sub">checking conformance…</span>` : null}
+        ${data ? html`
+          <div class="kv"><span>interlingua version</span><span style=${{color:"#5eead4"}}>v${data.version}</span></div>
+          <div class="kv"><span>catalogued belief types</span><span>${Object.keys(data.catalog).length}</span></div>
+          <div class="kv"><span>run drift</span><span style=${{color: data.run_report.conforms ? "#34d399" : "#f87171"}}>
+            ${data.run_report.conforms ? "✓ conforms" : (data.run_report.violations.length + " violation(s)")}
+            (${data.run_report.n_conforming}/${data.run_report.n_beliefs})</span></div>
+          <div class="kv"><span>coherence notes (loose types)</span><span>${data.coherence.length}</span></div>
+          <div class="stream" style=${{ maxHeight: "150px", marginTop: "8px" }}>
+            ${data.coherence.map((c, i) => html`
+              <div class="belief" key=${i}>
+                <div class="top"><span class="type">${c.belief_type}</span>
+                  <span class="src">${c.sources.length} emitters</span></div>
+                <div class="src">common: ${c.common_keys.join(", ") || "(none)"}</div>
+                <div class="src" style=${{ opacity:.7 }}>divergent: ${c.divergent_keys.join(", ")}</div>
+              </div>`)}
+          </div>
+          <div class="hint" style=${{ padding: "6px 0 0" }}>“loose” types (no required payload key) are candidates for tightening at the next interlingua version — surfaced as soft notes, not hard violations.</div>
+        ` : null}
+      </div>
+    </div>`;
+}
+
 function App() {
   const [meta, setMeta] = useState({});       // node_type -> metadata
   const [nodes, setNodes] = useState([]);
@@ -388,6 +424,8 @@ function App() {
                 </div>`)}
             </div>
           </div>
+
+          <${InterlinguaCard} />
         </div>
       </div>
       `}

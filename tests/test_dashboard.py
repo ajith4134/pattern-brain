@@ -87,6 +87,22 @@ def test_route_endpoint():
     print(f"  GET /api/route -> {' -> '.join(d['pathway'])} (router={d['router']})")
 
 
+def test_conformance_endpoint():
+    """Step-5 interlingua: /api/conformance returns the version + catalog, a drift
+    report over a run, and coherence notes (the conformance card's source)."""
+    r = client.get("/api/conformance")
+    check(r.status_code == 200, f"/api/conformance status {r.status_code}")
+    d = r.json()
+    check(d["version"], "no interlingua version returned")
+    check(len(d["catalog"]) >= 10, f"catalog too small: {len(d['catalog'])}")
+    check(d["run_report"]["conforms"] is True,
+          f"a default run should conform: {d['run_report']}")
+    check(isinstance(d["coherence"], list) and len(d["coherence"]) >= 1,
+          "expected at least one coherence note over the bank")
+    print(f"  GET /api/conformance -> v{d['version']}, {len(d['catalog'])} types, "
+          f"run conforms={d['run_report']['conforms']}, {len(d['coherence'])} coherence notes")
+
+
 def test_adapter_endpoint():
     """Step-3 Adapter View: candles -> StockDataAdapter -> generic (T,D) -> the
     SAME core pathway. The endpoint must return all three so the tab can show the
@@ -136,6 +152,7 @@ def main():
     test_pathway_endpoint()
     test_run_endpoint()
     test_route_endpoint()
+    test_conformance_endpoint()
     test_adapter_endpoint()
     test_ws_run_streams_start_hops_done()
     print("=" * 70)

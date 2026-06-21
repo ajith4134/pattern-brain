@@ -10,6 +10,8 @@ emitting a belief stream, so this serves exactly that:
 * ``GET  /api/run``     -> run the pathway once on synthetic data, full trace.
 * ``GET  /api/route``   -> Connector v1 (step 4): a router decides the pathway
                           hop-by-hop; returns the discovered path + per-hop reasons.
+* ``GET  /api/conformance`` -> interlingua (step 5): version + catalog, a drift
+                          report over a run, and coherence notes over the bank.
 * ``WS   /ws/run``      -> run the pathway, streaming each hop as it completes so
                           the living graph can animate belief-flow (the reason §8
                           chose a WebSocket backend).
@@ -148,6 +150,33 @@ def adapter() -> JSONResponse:
         "feature_shape": list(X.shape),
         "pathway": res.pathway,
         "trace": res.to_dict(),
+    })
+
+
+@app.get("/api/conformance")
+def conformance() -> JSONResponse:
+    """Step-5 interlingua view: the versioned shared-belief contract made visible.
+    Returns the interlingua version + catalog, a conformance report over a default
+    pathway run (drift detection), and coherence notes over the full bank (the
+    loose types whose payloads vary across emitters)."""
+    run = pb.default_connector().run(synthetic_sequence())
+    rep = pb.conformance_report(run.beliefs())
+    # coherence needs multiple emitters per type -> compute over the whole bank
+    bank_beliefs = []
+    Xb = synthetic_sequence()
+    for node in pb.default_bank():
+        try:
+            b = node.process(Xb) if not node.requires_y else None
+            if b is not None:
+                bank_beliefs.append(b)
+        except Exception:
+            pass
+    coherence = [n.to_dict() for n in pb.interlingua_coherence(bank_beliefs)]
+    return JSONResponse({
+        "version": pb.INTERLINGUA_VERSION,
+        "catalog": pb.catalog(),
+        "run_report": rep.to_dict(),
+        "coherence": coherence,
     })
 
 

@@ -20,6 +20,12 @@ from .routing import (
     RoutingState, RoutedConnector, RoutedResult, LAYER_ORDER, tool_spec, tool_specs,
     default_routed_connector,
 )
+from .interlingua import (
+    INTERLINGUA_VERSION, InterlinguaError, BeliefTypeSchema, register_belief_type,
+    belief_type_schema, known_belief_types, catalog, register_migration,
+    has_migration_path, migrate_belief, Violation, validate_belief, detect_drift,
+    ConformanceReport, conformance_report, CoherenceNote, interlingua_coherence,
+)
 
 __all__ = [
     "Belief", "SCHEMA_VERSION", "Node",
@@ -28,4 +34,9 @@ __all__ = [
     "Router", "HeuristicRouter", "LLMRouter", "RouterAction", "RouterDecision",
     "RouterError", "RoutingState", "RoutedConnector", "RoutedResult", "LAYER_ORDER",
     "tool_spec", "tool_specs", "default_routed_connector",
+    "INTERLINGUA_VERSION", "InterlinguaError", "BeliefTypeSchema",
+    "register_belief_type", "belief_type_schema", "known_belief_types", "catalog",
+    "register_migration", "has_migration_path", "migrate_belief", "Violation",
+    "validate_belief", "detect_drift", "ConformanceReport", "conformance_report",
+    "CoherenceNote", "interlingua_coherence",
 ]
