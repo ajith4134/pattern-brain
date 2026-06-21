@@ -128,9 +128,39 @@ class STEmbedder(Embedder):
         return v
 
 
+class OllamaEmbedder(Embedder):
+    """CPU embeddings via a (project-local) Ollama server running an embedding
+    model — `nomic-embed-text` by default (the sweep's CPU throughput winner).
+    Stdlib only; used if Ollama is reachable, else the caller falls back."""
+
+    def __init__(self, model: str = "nomic-embed-text", host: Optional[str] = None) -> None:
+        import urllib.request as _u
+        self._u = _u
+        self.model = model
+        self.host = (host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")).rstrip("/")
+        if not self.host.startswith("http"):
+            self.host = "http://" + self.host
+        self.name = f"ollama:{model}"
+        self.dim = len(self.embed("dimension probe"))    # discover dim from a real call
+
+    def embed(self, text: str) -> np.ndarray:
+        req = self._u.Request(self.host + "/api/embeddings",
+                              data=json.dumps({"model": self.model, "prompt": text}).encode(),
+                              headers={"Content-Type": "application/json"})
+        with self._u.urlopen(req, timeout=30) as r:
+            v = np.asarray(json.loads(r.read().decode())["embedding"], dtype=np.float64)
+        n = np.linalg.norm(v)
+        return v / n if n > 0 else v
+
+
 def default_embedder(dim: int = 512) -> Embedder:
-    """Prefer a real CPU sentence-transformer if available, else the dependency-free
-    hashing embedder (always works)."""
+    """Prefer the project-local Ollama embedder (nomic-embed-text) if reachable,
+    then a CPU sentence-transformer if installed, else the dependency-free hashing
+    embedder (always works)."""
+    try:
+        return OllamaEmbedder()
+    except Exception:
+        pass
     try:
         return STEmbedder()
     except Exception:

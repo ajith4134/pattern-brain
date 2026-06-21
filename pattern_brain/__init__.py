@@ -42,7 +42,7 @@ from .reputation import (
     PathwayReputation, PathwayStat, ReputationRouter,
 )
 from .knowledge import (
-    Embedder, HashingEmbedder, STEmbedder, default_embedder, chunk_text,
+    Embedder, HashingEmbedder, STEmbedder, OllamaEmbedder, default_embedder, chunk_text,
     VectorStore, Passage, Retrieval, KnowledgeBase, BookRef,
     BOOK_MANIFEST, book_manifest, DEFAULT_STORE_DIR,
 )
@@ -76,7 +76,7 @@ __all__ = [
     "Evolver", "ModelEvolver", "PathwayEvolver", "AlgorithmEvolver",
     "Individual", "EvolutionResult", "directional_candidate_fn",
     "PathwayReputation", "PathwayStat", "ReputationRouter",
-    "Embedder", "HashingEmbedder", "STEmbedder", "default_embedder", "chunk_text",
+    "Embedder", "HashingEmbedder", "STEmbedder", "OllamaEmbedder", "default_embedder", "chunk_text",
     "VectorStore", "Passage", "Retrieval", "KnowledgeBase", "BookRef",
     "BOOK_MANIFEST", "book_manifest", "DEFAULT_STORE_DIR",
     "auto_completer", "auto_text_completer", "default_llm_router", "llm_backend_status",

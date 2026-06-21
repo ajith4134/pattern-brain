@@ -36,7 +36,7 @@ Completer = Callable[[str, str, List[Dict[str, Any]]], Dict[str, Any]]
 # A conversational callable: a list of {role, content} messages -> assistant text.
 TextCompleter = Callable[..., str]
 
-DEFAULT_OLLAMA_MODEL = "llama3.1"
+DEFAULT_OLLAMA_MODEL = "qwen2.5-coder:7b"   # the project-local model we pull (Block 56)
 DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"  # small/fast is ideal for routing
 
 
