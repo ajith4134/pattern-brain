@@ -182,6 +182,8 @@ A dashboard **dedicated only to Pattern Brain** (no trading-bot coupling, Rule 1
 
 **Safety rails (Rule 16 steelman answered):** hard stop flag, per-iteration budget caps, nothing promotes without passing the `Evaluator` gate, single-step mode as the test/default. The loop adds the *continuous autonomous discovery* the owner asked for, which manual runs can't provide.
 
+✅ **DECIDED — all runtime/agent files stay inside the project folder (RULES.md Rule 1 clarification, owner reaffirmed 2026-06-21):** the agent's downloaded datasets/test data → `pattern-brain/data/`; the book vector DB + embeddings → `pattern-brain/knowledge_store/`; archival/recall memory + persisted loop state → `pattern-brain/agent_state/`. Never `/tmp`, a home cache, or anywhere outside this folder. These dirs are `.gitignore`d (local-only, still inside the folder). Every ENG step below MUST write its artifacts under these paths.
+
 ---
 
 ## Implementation progress tracker (Rule 22)

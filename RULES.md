@@ -9,6 +9,8 @@ All files related to this project — rules, discussion notes, code, data, deliv
 
 **How to apply:** Before creating any file for this project, it goes here, not in `~/.claude/projects/.../memory/`. The only thing allowed outside this folder is a single small pointer (see "Cross-session pointer" below) so a future session knows this folder exists at all.
 
+**Clarification added 2026-06-21 (owner reaffirmed) — runtime/agent-generated files are bound by this rule too.** This covers not only files *Claude* authors but every file the system *produces at runtime*: the ML Engineer Agent's (§9) downloaded datasets/test data, the book knowledge-base vector DB, embeddings, the agent's archival/recall memory, persisted loop state, logs, and any "additional files" it fetches. All of these MUST be written under `/home/dicktator4134/pattern-brain/` (e.g. `data/`, `knowledge_store/`, `agent_state/` subfolders) — never `/tmp`, never a home-dir cache, never anywhere outside this folder. Large/binary runtime artifacts are `.gitignore`d (kept local-only, still inside the folder), but their *location* is non-negotiable: nothing this project creates, at author-time or run-time, lives outside this folder.
+
 ## Rule 2 — Always Save All Discussions + Chat History (owner-mandated 2026-06-20)
 Every discussion in this project — the owner's ideas AND Claude's own analysis/ideas — gets saved in detail to `DISCUSSION_NOTES.md`, like taking notes. Every message, not just the "important" ones.
 
