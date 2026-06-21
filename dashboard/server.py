@@ -12,6 +12,12 @@ emitting a belief stream, so this serves exactly that:
                           hop-by-hop; returns the discovered path + per-hop reasons.
 * ``GET  /api/conformance`` -> interlingua (step 5): version + catalog, a drift
                           report over a run, and coherence notes over the bank.
+* ``GET  /api/overview``    -> whole-system summary: counts for every subsystem,
+                          build status, models-by-layer (the landing view).
+* ``GET  /api/files``       -> every source file (core/tests/dashboard): path,
+                          lines, kind, docstring summary.
+* ``GET  /api/evaluator``   -> the 5-layer gate on a demo edge vs noise candidate.
+* ``GET  /api/evolution``   -> Features 1/2/3 run; the born->tested->promoted feed.
 * ``WS   /ws/run``      -> run the pathway, streaming each hop as it completes so
                           the living graph can animate belief-flow (the reason §8
                           chose a WebSocket backend).
@@ -196,6 +202,175 @@ def conformance() -> JSONResponse:
     return JSONResponse(_conformance_payload())
 
 
+ROOT = os.path.dirname(HERE)  # the pattern-brain project root
+
+
+@lru_cache(maxsize=1)
+def _files_payload() -> dict:
+    """Walk every source file in the project (pattern_brain/, tests/, dashboard/)
+    so the dashboard can show ANY file, not just the model nodes. Each entry:
+    path, lines, kind, and the first docstring/comment line as a summary."""
+    import ast
+    groups = {"pattern_brain": "core", "tests": "tests", "dashboard": "dashboard"}
+    out = []
+    total_lines = 0
+    for top, kind in groups.items():
+        base = os.path.join(ROOT, top)
+        for dirpath, dirs, files in os.walk(base):
+            dirs[:] = [d for d in dirs if d not in ("__pycache__", ".venv")]
+            for fn in sorted(files):
+                if not (fn.endswith(".py") or fn.endswith(".html")):
+                    continue
+                full = os.path.join(dirpath, fn)
+                rel = os.path.relpath(full, ROOT)
+                try:
+                    text = open(full, encoding="utf-8").read()
+                except Exception:
+                    continue
+                n = text.count("\n") + 1
+                total_lines += n
+                summary = ""
+                if fn.endswith(".py"):
+                    try:
+                        summary = (ast.get_docstring(ast.parse(text)) or "").split("\n")[0]
+                    except Exception:
+                        summary = ""
+                if not summary:
+                    for line in text.splitlines():
+                        s = line.strip().lstrip("#<!-").strip()
+                        if s:
+                            summary = s[:120]; break
+                out.append({"path": rel, "lines": n, "kind": kind, "summary": summary[:160]})
+    out.sort(key=lambda f: (f["kind"], f["path"]))
+    return {"files": out, "n_files": len(out), "total_lines": total_lines}
+
+
+@lru_cache(maxsize=1)
+def _overview_payload() -> dict:
+    """Everything at a glance: live counts for every subsystem + build status, so
+    opening the dashboard shows the WHOLE system rather than one 4-node pathway."""
+    bank = pb.default_bank()
+    from collections import Counter
+    layer_counts = dict(Counter(n.layer for n in bank))
+    files = _files_payload()
+    try:
+        import pattern_brain.nodes.deep as _d
+        torch_on = _d.TORCH_AVAILABLE
+    except Exception:
+        torch_on = False
+    n_test_suites = sum(1 for f in files["files"] if f["path"].startswith("tests/")
+                        and os.path.basename(f["path"]).startswith("test_"))
+    subsystems = [
+        {"name": "Model Bank", "tab": "bank", "count": len(bank),
+         "desc": f"{len(bank)} models across {len(layer_counts)} functional layers"},
+        {"name": "Connector v0", "tab": "living", "count": len(pb.DEFAULT_PATHWAY),
+         "desc": "fixed hardcoded pathway, run hop-by-hop"},
+        {"name": "Routing v1", "tab": "living", "count": len(pb.default_bank()),
+         "desc": "LLM-tool-calling router decides the pathway dynamically"},
+        {"name": "Stock Adapter", "tab": "adapter", "count": 4,
+         "desc": "candles -> generic (T,D); the only domain-specific code"},
+        {"name": "Interlingua", "tab": "living", "count": len(pb.catalog()),
+         "desc": f"versioned belief contract (v{pb.INTERLINGUA_VERSION})"},
+        {"name": "Evaluator", "tab": "evaluator", "count": 5,
+         "desc": "5-layer admission gate (walk-forward, PSR/DSR, UCB, Pareto/PBO, anchors)"},
+        {"name": "Evolution F1/2/3", "tab": "evolution", "count": 3,
+         "desc": "model / pathway / algorithm evolution, gated by the Evaluator"},
+    ]
+    build = [
+        {"step": "1 Model bank", "done": True},
+        {"step": "2 Connector v0 + dashboard", "done": True},
+        {"step": "3 Stock adapter", "done": True},
+        {"step": "4 LLM-tool-calling routing", "done": True},
+        {"step": "5 Interlingua versioning", "done": True},
+        {"step": "6 Bank expansion (123, +PyTorch)", "done": True},
+        {"step": "Final: Evaluator + Features 1/2/3", "done": True},
+    ]
+    return {
+        "models": len(bank), "layers": layer_counts, "belief_types": len(pb.catalog()),
+        "n_files": files["n_files"], "total_lines": files["total_lines"],
+        "n_test_suites": n_test_suites, "torch": torch_on,
+        "interlingua_version": pb.INTERLINGUA_VERSION,
+        "subsystems": subsystems, "build": build,
+    }
+
+
+def _ar_edge(T=420, coef=0.6, seed=0):
+    rng = np.random.default_rng(seed)
+    x = np.zeros(T)
+    for t in range(1, T):
+        x[t] = coef * x[t - 1] + rng.normal(0, 0.3)
+    return np.column_stack([np.cumsum(x) + 50.0, rng.normal(0, 1, T)])
+
+
+@lru_cache(maxsize=1)
+def _evaluator_payload() -> dict:
+    """The 5-layer gate made visible: an edge candidate vs a noise candidate, the
+    walk-forward folds, and each one's significance verdict."""
+    X = _ar_edge()
+    ev = pb.Evaluator(n_splits=5, embargo=0.02, psr_threshold=0.9, dsr_threshold=0.9)
+    splits = pb.purged_walk_forward_splits(X.shape[0], 5, 0.02)
+
+    def edge(train, test):
+        rng = np.random.default_rng(int(abs(test.sum())) % 9999)
+        return 0.45 + rng.normal(0, 1.0, test.shape[0])
+
+    def noise(train, test):
+        rng = np.random.default_rng(int(abs(test.sum())) % 9999 + 1)
+        return rng.normal(0, 1.0, test.shape[0])
+
+    rep_e = ev.evaluate_candidate(edge, X)
+    rep_n = ev.evaluate_candidate(noise, X)
+    return {
+        "folds": [{"train": int(len(tr)), "test_lo": int(te[0]), "test_hi": int(te[-1])}
+                  for tr, te in splits],
+        "n_samples": int(X.shape[0]),
+        "edge": rep_e.to_dict(), "noise": rep_n.to_dict(),
+        "layers": ["L0 purged walk-forward", "L1 PSR/DSR/minTRL", "L2 discounted-UCB",
+                   "L3 NSGA-II Pareto + CSCV/PBO", "L4 anchor episodes"],
+    }
+
+
+@lru_cache(maxsize=1)
+def _evolution_payload() -> dict:
+    """Run all three evolution engines (small) on edge data and return the
+    Evolution feed (born -> tested -> promoted) + best genome for each."""
+    X = _ar_edge(T=700, coef=0.65)
+    feats = {}
+    for Eng in (pb.ModelEvolver, pb.PathwayEvolver, pb.AlgorithmEvolver):
+        res = Eng(population=8, generations=3, seed=1).run(X)
+        hist = res.history[-24:]
+        feats[res.feature] = {
+            "best": res.best.to_dict() if res.best else None,
+            "admitted": len(res.admitted),
+            "events": [{"event": h["event"], "origin": h.get("origin"),
+                        "genome": h.get("genome"),
+                        "ucb": (h["report"]["ucb"] if h.get("report") else None),
+                        "passed": (h["report"]["passed"] if h.get("report") else None)}
+                       for h in hist],
+        }
+    return {"features": feats}
+
+
+@app.get("/api/files")
+def files() -> JSONResponse:
+    return JSONResponse(_files_payload())
+
+
+@app.get("/api/overview")
+def overview() -> JSONResponse:
+    return JSONResponse(_overview_payload())
+
+
+@app.get("/api/evaluator")
+def evaluator() -> JSONResponse:
+    return JSONResponse(_evaluator_payload())
+
+
+@app.get("/api/evolution")
+def evolution() -> JSONResponse:
+    return JSONResponse(_evolution_payload())
+
+
 @app.websocket("/ws/run")
 async def ws_run(ws: WebSocket) -> None:
     """Stream the pathway run hop-by-hop so the living graph animates belief-flow.
@@ -222,6 +397,23 @@ async def ws_run(ws: WebSocket) -> None:
             await ws.close()
         except RuntimeError:
             pass
+
+
+@app.on_event("startup")
+def _prewarm() -> None:
+    """Build the expensive caches (evolution runs ~15s; conformance processes the
+    whole bank) in a background thread at boot, so a user's first click on those
+    tabs is instant rather than a long stall."""
+    import threading
+
+    def warm():
+        for fn in (_overview_payload, _files_payload, _bank_payload, _route_payload,
+                   _conformance_payload, _evaluator_payload, _evolution_payload):
+            try:
+                fn()
+            except Exception:
+                pass
+    threading.Thread(target=warm, daemon=True).start()
 
 
 if __name__ == "__main__":

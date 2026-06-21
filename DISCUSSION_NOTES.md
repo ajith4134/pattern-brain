@@ -1049,3 +1049,22 @@ After both fixes the gate behaves correctly: on a pure **random walk** (the prop
 **Concrete opinion (Rule 10):** the engines working is almost secondary — the headline result is that the GATE works: it admits a matched model on a real edge and refuses everything on a random walk, which is exactly the backtest-overfitting protection an evolutionary search most needs (it's the component most prone to selecting a lucky winner from many). Feature 1 dominating on AR data (the matched model) while Features 2/3 correctly abstain is honest behavior, not a weakness. The plan's entire build order is now implemented end-to-end.
 
 Rules applied: 1, 2, 4, 9, 10, 13, 14, 18, 19 (imported discipline), 20, 21, 22, 23, 24, 25.
+
+## BLOCK 52 — Comprehensive dashboard: show EVERYTHING (every model + every file) (2026-06-21)
+
+Owner: "still the dashboard is only showing 4 nodes — make it show every ML or any file; think hard and come up with ideas on how all the files show in the dashboard." Root cause of the persistent "4 nodes": the dashboard LANDED on the Living-Graph tab (the 4-node running pathway); the 123-node bank was behind a tab the owner didn't click, and the final-phase work (evaluator, evolution) had NO views at all.
+
+**Fix — rebuilt the dashboard around a comprehensive Overview + a view for every subsystem + a file explorer:**
+- **Overview (new default landing)** — `GET /api/overview`: KPI tiles (123 models, 8 layers, 12 belief types, 32 source files, 8456 lines, 9 test suites), a clickable card per subsystem (Model Bank, Connector v0, Routing v1, Stock Adapter, Interlingua, Evaluator, Evolution F1/2/3) each with a live count, build-progress checklist, and models-by-layer. Opening the dashboard now shows the WHOLE system at a glance — never "4 nodes".
+- **Files (new)** — `GET /api/files`: walks `pattern_brain/`, `tests/`, `dashboard/` and lists every `.py`/`.html` with path, line count, kind, and its docstring/first-line summary, with a live path filter. Directly answers "any file in the dashboard".
+- **Evaluator (new)** — `GET /api/evaluator`: the 5-layer gate made visible — the purged walk-forward folds + an edge candidate (✓ PASSES) vs a pure-noise candidate (✗ rejected), with PSR/DSR/Sharpe.
+- **Evolution (new)** — `GET /api/evolution`: runs Features 1/2/3 and renders the born→tested→promoted feed + best genome + admitted count per engine.
+- Kept Model Bank (123 nodes), Living Graph, Adapter; folded Routing + Interlingua cards into Living Graph.
+
+**Performance:** the new heavy endpoints (`/api/evolution` ~15s as it runs three GA loops, `/api/conformance` processes the whole bank) are `@lru_cache`d AND a **startup background thread pre-warms every cache at boot**, so a user's first click is instant rather than a 15s stall.
+
+**Evidence (Rule 25 + Block-43 browser discipline):** `tests/test_dashboard.py` gained `test_overview/files/evaluator/evolution_endpoint` — all green. **Verified in a real browser:** the page LANDS on the Overview showing the six KPI tiles incl. "123 models" and 7 subsystem cards; Model Bank renders 123 react-flow nodes; Files lists 32 rows; Evaluator shows "✓ PASSES gate" for the edge and rejection for noise; Evolution renders all three feature feeds; no JS errors (favicon only). Screenshot captured.
+
+**Concrete opinion (Rule 10):** the real problem was information architecture, not missing data — `/api/bank` always returned all 123, but the landing buried it. Leading with a system Overview (KPI tiles + subsystem cards) is the standard observability-dashboard pattern (Grafana/MLflow home pages) and is the right fix: it makes the whole system legible in one screen and routes to detail views. The Files explorer + per-subsystem views mean every artifact the project contains — every model and every source file — is now reachable from the dashboard.
+
+Rules applied: 1, 2, 4, 9, 10, 14, 18, 19 (imported discipline), 20, 21, 22, 23, 24, 25.

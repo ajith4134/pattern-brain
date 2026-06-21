@@ -73,6 +73,51 @@ def test_run_endpoint():
     print(f"  GET /api/run -> {len(d['hops'])} hops, output={d['output']['type']}")
 
 
+def test_overview_endpoint():
+    r = client.get("/api/overview")
+    check(r.status_code == 200, f"/api/overview status {r.status_code}")
+    d = r.json()
+    check(d["models"] >= 55, f"overview models too few: {d['models']}")
+    check(d["n_files"] >= 10, f"overview n_files too few: {d['n_files']}")
+    check(len(d["subsystems"]) >= 6, "overview missing subsystems")
+    check(all(b["done"] for b in d["build"]), "overview build steps not all done")
+    print(f"  GET /api/overview -> {d['models']} models, {d['n_files']} files, "
+          f"{len(d['subsystems'])} subsystems")
+
+
+def test_files_endpoint():
+    r = client.get("/api/files")
+    check(r.status_code == 200, f"/api/files status {r.status_code}")
+    d = r.json()
+    check(d["n_files"] == len(d["files"]), "files count mismatch")
+    check(any(f["path"].startswith("pattern_brain/") for f in d["files"]), "no core files listed")
+    check(any(f["path"].startswith("tests/") for f in d["files"]), "no test files listed")
+    check(all("lines" in f and "summary" in f for f in d["files"]), "file entries missing fields")
+    print(f"  GET /api/files -> {d['n_files']} files, {d['total_lines']} lines")
+
+
+def test_evaluator_endpoint():
+    r = client.get("/api/evaluator")
+    check(r.status_code == 200, f"/api/evaluator status {r.status_code}")
+    d = r.json()
+    check(len(d["folds"]) >= 3, "evaluator missing folds")
+    check(len(d["layers"]) == 5, "evaluator should expose 5 layers")
+    check(d["edge"]["passed"] is True, f"edge candidate should pass: {d['edge']}")
+    check(d["noise"]["passed"] is False, "noise candidate should be rejected")
+    print(f"  GET /api/evaluator -> edge passes={d['edge']['passed']}, noise passes={d['noise']['passed']}")
+
+
+def test_evolution_endpoint():
+    r = client.get("/api/evolution")
+    check(r.status_code == 200, f"/api/evolution status {r.status_code}")
+    d = r.json()
+    check(set(d["features"]) >= {"feature1_model", "feature3_pathway", "feature2_algorithm"},
+          f"evolution missing features: {list(d['features'])}")
+    for f, fd in d["features"].items():
+        check(len(fd["events"]) > 0, f"{f}: no evolution events")
+    print(f"  GET /api/evolution -> {list(d['features'])}")
+
+
 def test_route_endpoint():
     """Step-4 Connector v1: /api/route returns a router-discovered pathway plus
     the per-hop rationale (the dashboard's routed-pathway card source)."""
@@ -151,6 +196,10 @@ def main():
     test_bank_endpoint()
     test_pathway_endpoint()
     test_run_endpoint()
+    test_overview_endpoint()
+    test_files_endpoint()
+    test_evaluator_endpoint()
+    test_evolution_endpoint()
     test_route_endpoint()
     test_conformance_endpoint()
     test_adapter_endpoint()

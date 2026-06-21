@@ -67,6 +67,23 @@
   .matrix td { text-align:right; padding:1px 8px; color:#bcd; }
   .pill { display:inline-block; background:var(--panel2); border:1px solid var(--line);
           border-radius:12px; padding:2px 10px; margin:2px; font-size:11px; color:var(--accent); }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; padding:12px 14px; }
+  .tile { background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .tile .big { font-size:30px; font-weight:800; color:var(--accent); }
+  .tile .lbl { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.5px; margin-top:4px; }
+  .subsys { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px; padding:12px 14px; }
+  .subsys .s { background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:12px; cursor:pointer; transition:border-color .2s; }
+  .subsys .s:hover { border-color:var(--accent); }
+  .subsys .s .n { font-weight:700; display:flex; justify-content:space-between; }
+  .subsys .s .n b { color:var(--accent); }
+  .subsys .s .d { color:var(--dim); font-size:11px; margin-top:5px; }
+  .ftable { width:100%; font-size:11px; border-collapse:collapse; }
+  .ftable th { text-align:left; color:var(--dim); position:sticky; top:0; background:var(--panel); padding:4px 8px; }
+  .ftable td { padding:3px 8px; border-bottom:1px dotted var(--line); }
+  .ftable td.num { text-align:right; color:var(--accent); }
+  .ftable tr:hover td { background:var(--panel2); }
+  .kindtag { font-size:9px; padding:1px 6px; border-radius:8px; background:var(--panel); border:1px solid var(--line); color:var(--dim); }
+  .buildrow { display:flex; align-items:center; gap:8px; font-size:12px; padding:3px 0; }
 </style>
 </head>
 <body>
@@ -264,6 +281,140 @@ function InterlinguaCard() {
     </div>`;
 }
 
+// --- Overview (landing): the WHOLE system at a glance — counts for every
+// subsystem, build status, and clickable cards into each view. This is the answer
+// to "I only see 4 nodes": you land here, not on the 4-node pathway.
+function OverviewView({ color, setView }) {
+  const [d, setD] = useState(null);
+  useEffect(() => { fetch("/api/overview").then(r => r.json()).then(setD); }, []);
+  if (!d) return html`<div class="card"><div class="body"><span class="sub">loading system overview…</span></div></div>`;
+  const tiles = [
+    ["models", d.models, "ML models"], ["layers", Object.keys(d.layers).length, "functional layers"],
+    ["types", d.belief_types, "belief types"], ["files", d.n_files, "source files"],
+    ["lines", d.total_lines, "lines of code"], ["tests", d.n_test_suites, "test suites"],
+  ];
+  return html`
+    <div style=${{ padding: "4px" }}>
+      <div class="card">
+        <h2>Pattern Brain — full system (everything built so far)</h2>
+        <div class="tiles">
+          ${tiles.map(([k,v,l]) => html`<div class="tile" key=${k}>
+            <div class="big">${v}</div><div class="lbl">${l}</div></div>`)}
+        </div>
+        <div class="hint">torch deep nodes: ${d.torch ? "ON" : "off"} · interlingua v${d.interlingua_version}. Click any subsystem below to open its view.</div>
+      </div>
+      <div class="card">
+        <h2>Subsystems — click to open</h2>
+        <div class="subsys">
+          ${d.subsystems.map((s,i) => html`<div class="s" key=${i} onClick=${() => setView(s.tab)}>
+            <div class="n">${s.name}<b>${s.count}</b></div><div class="d">${s.desc}</div></div>`)}
+        </div>
+      </div>
+      <div class="card">
+        <h2>Build progress</h2>
+        <div class="body">
+          ${d.build.map((b,i) => html`<div class="buildrow" key=${i}>
+            <span style=${{ color: b.done ? "#34d399" : "#8aa0c8" }}>${b.done ? "✓" : "○"}</span>
+            <span>${b.step}</span></div>`)}
+        </div>
+      </div>
+      <div class="card">
+        <h2>Models by functional layer</h2>
+        <div class="body">
+          ${Object.entries(d.layers).sort().map(([l,n]) => html`<div class="kv" key=${l}>
+            <span style=${{ color: color(l) }}>${l}</span><span>${n}</span></div>`)}
+        </div>
+      </div>
+    </div>`;
+}
+
+// --- Files view: every source file in the project (core + tests + dashboard).
+function FilesView() {
+  const [d, setD] = useState(null);
+  const [q, setQ] = useState("");
+  useEffect(() => { fetch("/api/files").then(r => r.json()).then(setD); }, []);
+  if (!d) return html`<div class="card"><div class="body"><span class="sub">loading files…</span></div></div>`;
+  const rows = d.files.filter(f => f.path.toLowerCase().includes(q.toLowerCase()));
+  return html`
+    <div style=${{ padding: "4px" }}>
+      <div class="card">
+        <h2>Project files — ${d.n_files} files, ${d.total_lines} lines (every .py / .html)</h2>
+        <div class="body">
+          <input placeholder="filter by path…" value=${q} oninput=${e => setQ(e.target.value)}
+                 style=${{ width: "100%", background: "var(--panel2)", color: "var(--txt)",
+                          border: "1px solid var(--line)", borderRadius: "6px", padding: "6px 10px",
+                          marginBottom: "8px", fontFamily: "inherit" }} />
+          <div style=${{ maxHeight: "560px", overflow: "auto" }}>
+            <table class="ftable">
+              <thead><tr><th>file</th><th>kind</th><th>lines</th><th>summary</th></tr></thead>
+              <tbody>
+                ${rows.map((f,i) => html`<tr key=${i}>
+                  <td>${f.path}</td><td><span class="kindtag">${f.kind}</span></td>
+                  <td class="num">${f.lines}</td><td style=${{ color: "#bcd" }}>${f.summary}</td></tr>`)}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// --- Evaluator view: the 5-layer admission gate made visible (edge vs noise).
+function EvaluatorView() {
+  const [d, setD] = useState(null);
+  useEffect(() => { fetch("/api/evaluator").then(r => r.json()).then(setD); }, []);
+  if (!d) return html`<div class="card"><div class="body"><span class="sub">running the evaluator…</span></div></div>`;
+  const verdict = (r) => html`
+    <div class="kv"><span>observations</span><span>${r.n_obs}</span></div>
+    <div class="kv"><span>Sharpe</span><span>${r.sharpe.toFixed(3)}</span></div>
+    <div class="kv"><span>PSR</span><span>${r.psr.toFixed(3)}</span></div>
+    <div class="kv"><span>DSR (deflated)</span><span>${r.dsr.toFixed(3)}</span></div>
+    <div class="kv"><span>verdict</span><span style=${{ color: r.passed ? "#34d399" : "#f87171" }}>
+      ${r.passed ? "✓ PASSES gate" : "✗ rejected"}</span></div>
+    ${r.reasons && r.reasons.length ? html`<div class="src" style=${{ color: "#f87171" }}>${r.reasons.join("; ")}</div>` : null}`;
+  return html`
+    <div style=${{ padding: "4px" }}>
+      <div class="card">
+        <h2>5-layer Evaluator — the hard gate Features 1/2/3 use</h2>
+        <div class="body">
+          ${d.layers.map((l,i) => html`<div class="buildrow" key=${i}><span style=${{color:"#5eead4"}}>L${i}</span><span>${l.slice(3)}</span></div>`)}
+          <div class="hint" style=${{ padding: "8px 0 0" }}>${d.folds.length} purged walk-forward folds over ${d.n_samples} samples (no leakage).</div>
+        </div>
+      </div>
+      <div class="adapter-grid">
+        <div class="card"><h2>Candidate WITH a real edge</h2><div class="body">${verdict(d.edge)}</div></div>
+        <div class="card"><h2>Pure-noise candidate</h2><div class="body">${verdict(d.noise)}</div></div>
+      </div>
+    </div>`;
+}
+
+// --- Evolution view: Features 1/2/3 — the candidates born -> tested -> promoted.
+function EvolutionView({ color }) {
+  const [d, setD] = useState(null);
+  useEffect(() => { fetch("/api/evolution").then(r => r.json()).then(setD); }, []);
+  if (!d) return html`<div class="card"><div class="body"><span class="sub">running the evolution engines (a few seconds)…</span></div></div>`;
+  const labels = { feature1_model: "Feature 1 — Model mutation",
+                   feature3_pathway: "Feature 3 — Pathway evolution",
+                   feature2_algorithm: "Feature 2 — Algorithm (GP) evolution" };
+  const evColor = (e) => e === "promoted" ? "#34d399" : e === "born" ? "#fbbf24" : "#8aa0c8";
+  return html`
+    <div style=${{ padding: "4px" }}>
+      ${Object.entries(d.features).map(([f, fd]) => html`
+        <div class="card" key=${f}>
+          <h2>${labels[f] || f} — ${fd.admitted} admitted through the gate</h2>
+          <div class="body">
+            <div class="kv"><span>best genome</span><span style=${{ color: "#5eead4", maxWidth: "70%", textAlign: "right" }}>${JSON.stringify(fd.best ? fd.best.genome : null)}</span></div>
+            <div class="stream" style=${{ maxHeight: "150px", marginTop: "8px" }}>
+              ${fd.events.map((e,i) => html`<div class="belief" key=${i}>
+                <div class="top"><span class="type" style=${{ color: evColor(e.event) }}>${e.event}${e.origin ? " ("+e.origin+")" : ""}</span>
+                  <span class="conf">${e.ucb != null ? "ucb " + e.ucb.toFixed(3) : ""}</span></div>
+                <div class="src">${JSON.stringify(e.genome)}</div></div>`)}
+            </div>
+          </div>
+        </div>`)}
+    </div>`;
+}
+
 // --- Model Bank view (build step 6). The WHOLE bank — every node, not just the
 // active pathway — laid out as columns by functional layer (the §8 "genome map"
 // precursor). This is the answer to "I only see 4 nodes": the Living-Graph tab
@@ -351,7 +502,7 @@ function App() {
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
   const [selected, setSelected] = useState(null);
-  const [view, setView] = useState("core");   // "core" | "adapter" (step-3 tab)
+  const [view, setView] = useState("overview");   // landing on the full-system overview
   const plotRef = useRef(null);
 
   // Load the hardcoded pathway + node metadata on mount.
@@ -420,22 +571,25 @@ function App() {
       <header>
         <h1>🧠 Pattern Brain</h1>
         <div class="tabs">
-          <button class=${"tab" + (view==="core" ? " active" : "")} onClick=${() => setView("core")}>Core (Living Graph)</button>
-          <button class=${"tab" + (view==="bank" ? " active" : "")} onClick=${() => setView("bank")}>Model Bank</button>
-          <button class=${"tab" + (view==="adapter" ? " active" : "")} onClick=${() => setView("adapter")}>Adapter View (stock)</button>
+          ${[["overview","Overview"],["bank","Model Bank"],["evaluator","Evaluator"],
+             ["evolution","Evolution"],["living","Living Graph"],["adapter","Adapter"],
+             ["files","Files"]].map(([k,label]) => html`
+            <button key=${k} class=${"tab" + (view===k ? " active" : "")}
+                    onClick=${() => setView(k)}>${label}</button>`)}
         </div>
-        <span class="sub">${view==="core" ? "step 2 · Connector v0 · the active pathway"
-            : view==="bank" ? "step 6 · the whole model bank"
-            : "step 3 · stock-data adapter (Rule 23)"}</span>
         <div style=${{ marginLeft: "auto", display: "flex", gap: "12px", alignItems: "center" }}>
-          ${view==="core" ? html`
+          ${view==="living" ? html`
             <span class="sub">${done ? "✓ run complete" : running ? "● running…" : "idle"}</span>
             <button onClick=${start} disabled=${running}>${running ? "running…" : "▶ Run pathway"}</button>
           ` : null}
         </div>
       </header>
 
-      ${view === "adapter" ? html`<${AdapterView} />`
+      ${view === "overview" ? html`<${OverviewView} color=${color} setView=${setView} />`
+        : view === "files" ? html`<${FilesView} />`
+        : view === "evaluator" ? html`<${EvaluatorView} />`
+        : view === "evolution" ? html`<${EvolutionView} color=${color} />`
+        : view === "adapter" ? html`<${AdapterView} />`
         : view === "bank" ? html`<${BankView} color=${color} />` : html`
       <div class="wrap">
         <div class="col">
