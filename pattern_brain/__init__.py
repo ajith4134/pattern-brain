@@ -40,6 +40,11 @@ from .evolution import (
 from .reputation import (
     PathwayReputation, PathwayStat, ReputationRouter,
 )
+from .llm import (
+    auto_completer, default_llm_router, llm_backend_status,
+    ollama_completer, anthropic_completer, ollama_available, anthropic_available,
+    parse_anthropic_response, parse_ollama_response,
+)
 
 __all__ = [
     "Belief", "SCHEMA_VERSION", "Node",
@@ -61,4 +66,7 @@ __all__ = [
     "Evolver", "ModelEvolver", "PathwayEvolver", "AlgorithmEvolver",
     "Individual", "EvolutionResult", "directional_candidate_fn",
     "PathwayReputation", "PathwayStat", "ReputationRouter",
+    "auto_completer", "default_llm_router", "llm_backend_status",
+    "ollama_completer", "anthropic_completer", "ollama_available", "anthropic_available",
+    "parse_anthropic_response", "parse_ollama_response",
 ]

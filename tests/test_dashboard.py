@@ -118,6 +118,15 @@ def test_evolution_endpoint():
     print(f"  GET /api/evolution -> {list(d['features'])}")
 
 
+def test_llm_endpoint():
+    r = client.get("/api/llm")
+    check(r.status_code == 200, f"/api/llm status {r.status_code}")
+    d = r.json()
+    check("router" in d and "active_backend" in d, "llm status missing keys")
+    check(isinstance(d["ollama_available"], bool), "ollama_available not boolean")
+    print(f"  GET /api/llm -> router={d['router']}")
+
+
 def test_reputation_endpoint():
     r = client.get("/api/reputation")
     check(r.status_code == 200, f"/api/reputation status {r.status_code}")
@@ -211,6 +220,7 @@ def main():
     test_files_endpoint()
     test_evaluator_endpoint()
     test_evolution_endpoint()
+    test_llm_endpoint()
     test_reputation_endpoint()
     test_route_endpoint()
     test_conformance_endpoint()

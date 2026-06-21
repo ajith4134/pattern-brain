@@ -1084,3 +1084,17 @@ Owner: "all 3" (close the loop + real LLM + resolve open decisions). Slice 1 = c
 **Concrete opinion (Rule 10):** this is the integration that makes the project a *system* rather than a toolbox — the Evaluator's verdict now persists on the graph and shapes future routing, exactly the synapse-like memory Block 17 argued for. Edge-colouring the live pathway graph (§8 view #1) is a smaller follow-on; the leaderboard (view #3) is the higher-value realization and is done.
 
 Rules applied: 1, 2, 4, 9, 10, 18, 19 (imported discipline), 20, 21, 22, 23, 24, 25.
+
+## BLOCK 54 — Post-plan: real LLM backends for the router (Block 45) (2026-06-21)
+
+Slice 2 of "all 3". The step-4 `LLMRouter` already ran the tool-calling loop against one injected `complete(system,user,tools)` callable; `pattern_brain/llm.py` now provides real implementations + auto-detection, so routing uses an actual LLM when configured and falls back to the heuristic otherwise.
+- **Ollama** (local, preferred — keeps Rule-1 separation, no cloud/cost): stdlib `urllib` to `$OLLAMA_HOST` /api/chat with tools; no extra package needed.
+- **Anthropic** (cloud): `anthropic` SDK + `$ANTHROPIC_API_KEY`, Messages API with `tool_choice={"type":"any"}` to force a tool pick.
+- `auto_completer()` returns the first reachable backend (Ollama then Anthropic) or `(None,None)`; `default_llm_router()` returns an `LLMRouter` wired to it, or `None` → caller keeps the heuristic. Same optional-dependency discipline as the torch nodes.
+- Dashboard: `/api/route` now uses the LLM router if available (reporting the backend), and `/api/llm` exposes `llm_backend_status()`.
+
+**Evidence:** `tests/test_llm.py` green WITHOUT any live backend — the response parsers are pure functions tested with mock responses; availability degrades gracefully (here both False → heuristic); the full tool-calling loop runs against a fake completer; generic tool specs convert to both anthropic + ollama formats. `test_llm_endpoint` green.
+
+**Concrete opinion (Rule 10):** the right design is auto-detect + graceful fallback, not a hardcoded backend — the owner can turn on a real LLM simply by running Ollama or setting `ANTHROPIC_API_KEY`, with zero code change, and everything (tests, dashboard) keeps working when neither is present. Defaulting to local Ollama first respects the project's separation/privacy posture; cloud Anthropic is the explicit opt-in.
+
+Rules applied: 1, 2, 4, 9, 10, 18, 19 (imported discipline), 20, 21, 23, 24, 25.

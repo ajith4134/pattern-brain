@@ -106,14 +106,28 @@ def run() -> JSONResponse:
 
 @lru_cache(maxsize=1)
 def _route_payload() -> dict:
-    routed = pb.default_routed_connector().route(synthetic_sequence())
+    # use a real LLM backend if one is configured (Ollama/Anthropic), else the
+    # offline heuristic — step-4 routing wired to a real model (Block 45).
+    from pattern_brain.routing import RoutedConnector
+    llm_router = pb.default_llm_router()
+    router = llm_router or pb.HeuristicRouter()
+    conn = RoutedConnector(router, name="routed")
+    routed = conn.route(synthetic_sequence())
     return {
-        "router": pb.default_routed_connector().router.name,
+        "router": router.name,
+        "llm": pb.llm_backend_status(),
         "pathway": routed.result.pathway,
         "decisions": [d.to_dict() for d in routed.decisions],
         "output": routed.result.output.to_dict() if routed.result.output else None,
         "trace": routed.result.to_dict(),
     }
+
+
+@app.get("/api/llm")
+def llm() -> JSONResponse:
+    """Which LLM backend the router would use right now (Ollama / Anthropic /
+    heuristic fallback) — step-4 LLM wiring made visible."""
+    return JSONResponse(pb.llm_backend_status())
 
 
 @app.get("/api/route")
