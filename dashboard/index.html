@@ -340,7 +340,7 @@ function FilesView() {
       <div class="card">
         <h2>Project files — ${d.n_files} files, ${d.total_lines} lines (every .py / .html)</h2>
         <div class="body">
-          <input placeholder="filter by path…" value=${q} oninput=${e => setQ(e.target.value)}
+          <input placeholder="filter by path…" value=${q} onInput=${e => setQ(e.target.value)}
                  style=${{ width: "100%", background: "var(--panel2)", color: "var(--txt)",
                           border: "1px solid var(--line)", borderRadius: "6px", padding: "6px 10px",
                           marginBottom: "8px", fontFamily: "inherit" }} />
@@ -637,8 +637,9 @@ function EngineerView({ color }) {
           </div>
           <div style=${{ display: "flex", gap: "8px" }}>
             <input style=${inp} placeholder="message the agent…" value=${msg}
-                   oninput=${e => setMsg(e.target.value)}
-                   onkeydown=${e => { if (e.key === "Enter") send(); }} />
+                   onInput=${e => setMsg(e.target.value)}
+                   onChange=${e => setMsg(e.target.value)}
+                   onKeyDown=${e => { if (e.key === "Enter") send(); }} />
             <button onClick=${send}>send</button>
           </div>
         </div>
