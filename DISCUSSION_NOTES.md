@@ -1030,3 +1030,22 @@ Owner: "the final phase — Features 1/2/3 + the shared 5-layer evaluator." The 
 **Concrete opinion (Rule 10):** building the evaluator first was clearly right — it's now a clean, tested, domain-agnostic scoring/admission service that Features 1/2/3 can each call as `select(...)` without re-implementing any statistics, and the DSR/PBO layers give real protection against the exact failure mode (selecting an overfit winner from many mutated candidates) that an evolution loop is most prone to. Next slice: Features 1 (model-instance mutation), 2 (algorithm/equation evolution), 3 (pathway evolution) — each gated by this evaluator.
 
 Rules applied: 1, 2, 4, 9, 10, 13, 18, 19 (imported discipline), 20, 21, 22, 23, 24, 25.
+
+## BLOCK 51 — Final phase, slice 2: Features 1/2/3 evolution engines (2026-06-21)
+
+`pattern_brain/evolution.py` — the three evolution engines, all gated by the slice-1 Evaluator. Shared `Evolver` GA loop: init population → score each via the Evaluator (Layers 0-2) → breed next gen from elites (mutate/crossover) → final population admission via the Evaluator (Layers 3-4). Order resolved 1→3→2.
+- **Feature 1 `ModelEvolver`** — mutate/crossover a forecaster node's hyperparameters (parameter space within a fixed algorithm family).
+- **Feature 3 `PathwayEvolver`** — mutate/crossover Connector pathways (graph topology); `_legalize` keeps every genome layer-ordered and forecaster-head-terminated so the evolved graph is always runnable.
+- **Feature 2 `AlgorithmEvolver`** — genetic programming over symbolic expression trees (function set +,-,*,protected-/,neg,sin,tanh,abs over lagged inputs/mean/last/slope) — invents NEW forecasting equations, a level above Feature 1.
+
+Fitness is a generic **directional-reward** outcome series (predict next-move direction of channel 0; +1 hit / −1 miss / 0 flat), scored by the domain-agnostic Evaluator. `EvolutionResult.history` records every candidate born→tested→promoted = the §8 Evolution feed.
+
+**Two real bugs found via the random-walk null test (Rule 14) and fixed — this is the whole point of the gate:**
+1. DSR was over-deflating with a hardcoded `var_sr=1.0` (assumes cross-trial Sharpe variance of 1.0 → benchmark ~1.45, which no short directional-reward stream clears) → NOTHING ever admitted, even a perfect AR fit. Fixed: the Evaluator now estimates `var_sr` from the sample (Lo 2002 ~(1+sr²/2)/n) when not given, and the Evolver re-deflates each candidate against the REAL cross-sectional variance of the population's Sharpes over the TOTAL number tried.
+2. The evolution loop called `Evaluator.select` WITHOUT a perf_matrix → CSCV/PBO (the strongest anti-overfit layer) never ran → the engines admitted FALSE POSITIVES on a pure random walk (e.g. AlgorithmEvolver DSR 0.96 on noise). Fixed: each candidate's walk-forward outcome stream is stored and fed into `select` as the PBO matrix.
+
+After both fixes the gate behaves correctly: on a pure **random walk** (the proper null — next move independent of the past) ALL three engines admit **0**; on genuine **AR-edge** data the matched engine (Feature 1) **promotes**. (Note: an i.i.d. series is NOT a valid null here — it's mean-reverting, so "predict toward the mean" is a real edge; the random walk is the honest no-edge baseline.)
+
+**Concrete opinion (Rule 10):** the engines working is almost secondary — the headline result is that the GATE works: it admits a matched model on a real edge and refuses everything on a random walk, which is exactly the backtest-overfitting protection an evolutionary search most needs (it's the component most prone to selecting a lucky winner from many). Feature 1 dominating on AR data (the matched model) while Features 2/3 correctly abstain is honest behavior, not a weakness. The plan's entire build order is now implemented end-to-end.
+
+Rules applied: 1, 2, 4, 9, 10, 13, 14, 18, 19 (imported discipline), 20, 21, 22, 23, 24, 25.

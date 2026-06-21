@@ -348,9 +348,15 @@ class Evaluator:
 
     # ---- Layers 1 + 2 on an outcome series
     def evaluate_outcomes(self, outcomes: Sequence[float], n_trials: int = 1,
-                          var_sr: float = 1.0) -> EvaluationReport:
+                          var_sr: Optional[float] = None) -> EvaluationReport:
         x = np.asarray(outcomes, dtype=float)
         sr = sharpe(x)
+        # If the cross-trial Sharpe variance isn't supplied, estimate the Sharpe
+        # ESTIMATOR variance from the sample (Lo 2002: ~(1 + sr^2/2)/n). Using a
+        # hardcoded 1.0 would wildly over-deflate short directional-reward streams.
+        if var_sr is None:
+            n = max(2, x.size)
+            var_sr = (1.0 + 0.5 * sr ** 2) / n
         psr = probabilistic_sharpe_ratio(x)
         dsr = deflated_sharpe_ratio(x, n_trials=n_trials, var_sr=var_sr)
         trl = min_track_record_length(x)
@@ -367,7 +373,7 @@ class Evaluator:
         return EvaluationReport(int(x.size), sr, psr, dsr, trl, ucb, objs, passed, reasons)
 
     def evaluate_candidate(self, candidate: CandidateFn, X: np.ndarray,
-                           n_trials: int = 1, var_sr: float = 1.0) -> EvaluationReport:
+                           n_trials: int = 1, var_sr: Optional[float] = None) -> EvaluationReport:
         """Full Layer-0→2 evaluation of one candidate on dataset ``X``."""
         return self.evaluate_outcomes(self.walk_forward_outcomes(candidate, X),
                                       n_trials=n_trials, var_sr=var_sr)

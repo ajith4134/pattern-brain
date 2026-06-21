@@ -33,6 +33,10 @@ from .evaluator import (
     expected_max_sharpe, discounted_ucb_score, sliding_window_ucb_score,
     nondominated_sort, pareto_front, cscv_pbo, anchor_check,
 )
+from .evolution import (
+    Evolver, ModelEvolver, PathwayEvolver, AlgorithmEvolver,
+    Individual, EvolutionResult, directional_candidate_fn,
+)
 
 __all__ = [
     "Belief", "SCHEMA_VERSION", "Node",
@@ -51,4 +55,6 @@ __all__ = [
     "probabilistic_sharpe_ratio", "deflated_sharpe_ratio", "min_track_record_length",
     "expected_max_sharpe", "discounted_ucb_score", "sliding_window_ucb_score",
     "nondominated_sort", "pareto_front", "cscv_pbo", "anchor_check",
+    "Evolver", "ModelEvolver", "PathwayEvolver", "AlgorithmEvolver",
+    "Individual", "EvolutionResult", "directional_candidate_fn",
 ]
