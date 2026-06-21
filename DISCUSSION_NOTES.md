@@ -1068,3 +1068,19 @@ Owner: "still the dashboard is only showing 4 nodes — make it show every ML or
 **Concrete opinion (Rule 10):** the real problem was information architecture, not missing data — `/api/bank` always returned all 123, but the landing buried it. Leading with a system Overview (KPI tiles + subsystem cards) is the standard observability-dashboard pattern (Grafana/MLflow home pages) and is the right fix: it makes the whole system legible in one screen and routes to detail views. The Files explorer + per-subsystem views mean every artifact the project contains — every model and every source file — is now reachable from the dashboard.
 
 Rules applied: 1, 2, 4, 9, 10, 14, 18, 19 (imported discipline), 20, 21, 22, 23, 24, 25.
+
+## BLOCK 53 — Post-plan: closing the loop with pathway reputation (Block 17) (2026-06-21)
+
+Owner: "all 3" (close the loop + real LLM + resolve open decisions). Slice 1 = closing the loop, the centerpiece — making the built pieces feed each other instead of being separate modules.
+
+`pattern_brain/reputation.py` realizes Block 17 ("score CONNECTIONS, not models — the graph itself becomes the memory"):
+- `PathwayReputation` — per-pathway usage + a recency-weighted (discounted-UCB) outcome score + per-edge aggregates, optionally regime-conditioned (the World Model).
+- `ReputationRouter(Router)` — routes by the reputation of the edge it would create, falling back to the heuristic layer-advance on never-seen edges (curiosity/exploration).
+- Wiring: `PathwayEvolver` now records every tested pathway into a reputation store (new `_after_score` hook on the base `Evolver`), so after evolution the store drives routing + the dashboard.
+- Dashboard: new **Pathways** tab + `/api/reputation` — the Pathway Leaderboard (§8 view #3) ranked by reputation + top edge reputations.
+
+**Evidence:** `tests/test_reputation.py` green — better pathway scores higher; unseen edge returns None (so routing explores); regime-conditioning works; ReputationRouter prefers the proven edge and falls back on unseen ones; PathwayEvolver populates the store. Dashboard test `test_reputation_endpoint` green (15 pathways, 16 edges); Pathways tab verified in a real browser (15 leaderboard rows + edges, no JS errors).
+
+**Concrete opinion (Rule 10):** this is the integration that makes the project a *system* rather than a toolbox — the Evaluator's verdict now persists on the graph and shapes future routing, exactly the synapse-like memory Block 17 argued for. Edge-colouring the live pathway graph (§8 view #1) is a smaller follow-on; the leaderboard (view #3) is the higher-value realization and is done.
+
+Rules applied: 1, 2, 4, 9, 10, 18, 19 (imported discipline), 20, 21, 22, 23, 24, 25.

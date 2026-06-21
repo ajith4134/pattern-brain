@@ -275,6 +275,8 @@ def _overview_payload() -> dict:
          "desc": "5-layer admission gate (walk-forward, PSR/DSR, UCB, Pareto/PBO, anchors)"},
         {"name": "Evolution F1/2/3", "tab": "evolution", "count": 3,
          "desc": "model / pathway / algorithm evolution, gated by the Evaluator"},
+        {"name": "Pathway Reputation", "tab": "pathways", "count": 0,
+         "desc": "the graph IS the memory: pathways/edges scored + ranked (Block 17)"},
     ]
     build = [
         {"step": "1 Model bank", "done": True},
@@ -351,6 +353,21 @@ def _evolution_payload() -> dict:
     return {"features": feats}
 
 
+@lru_cache(maxsize=1)
+def _reputation_payload() -> dict:
+    """Closing the loop (Block 17): run pathway evolution so its reputation store
+    fills, then return the Pathway Leaderboard + edge reputations (§8 view #3)."""
+    X = _ar_edge(T=600, coef=0.65)
+    ev = pb.PathwayEvolver(population=8, generations=3, seed=1)
+    ev.run(X)
+    return ev.reputation.to_dict(top=15)
+
+
+@app.get("/api/reputation")
+def reputation() -> JSONResponse:
+    return JSONResponse(_reputation_payload())
+
+
 @app.get("/api/files")
 def files() -> JSONResponse:
     return JSONResponse(_files_payload())
@@ -408,7 +425,8 @@ def _prewarm() -> None:
 
     def warm():
         for fn in (_overview_payload, _files_payload, _bank_payload, _route_payload,
-                   _conformance_payload, _evaluator_payload, _evolution_payload):
+                   _conformance_payload, _evaluator_payload, _evolution_payload,
+                   _reputation_payload):
             try:
                 fn()
             except Exception:

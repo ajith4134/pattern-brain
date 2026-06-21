@@ -162,6 +162,11 @@ class Evolver:
         cand = directional_candidate_fn(self.make_predictor_fn(ind.genome))
         ind.outcomes = self.evaluator.walk_forward_outcomes(cand, X)
         ind.report = self.evaluator.evaluate_outcomes(ind.outcomes, n_trials=n_trials)
+        self._after_score(ind)
+
+    def _after_score(self, ind: Individual) -> None:
+        """Hook: subclasses may record the scored candidate (e.g. pathway
+        reputation). Default: nothing."""
 
     def run(self, X: np.ndarray) -> EvolutionResult:
         X = np.asarray(X, dtype=float)
@@ -329,6 +334,20 @@ class PathwayEvolver(Evolver):
               "drift_forecast", "ridge_forecast", "knn_forecast"]
     _PRE = {"signal": ["difference", "moving_average", "ewma", "detrend"],
             "noise": ["savgol_denoise", "pca_denoise", "median_filter"]}
+
+    def __init__(self, reputation=None, regime: str = "all", **kw):
+        super().__init__(**kw)
+        # Block 17: every tested pathway's score is remembered on the graph, so it
+        # can later drive ReputationRouter + the dashboard Pathway Leaderboard.
+        if reputation is None:
+            from .reputation import PathwayReputation
+            reputation = PathwayReputation(gamma=self.evaluator.gamma)
+        self.reputation = reputation
+        self.regime = regime
+
+    def _after_score(self, ind: Individual) -> None:
+        self.reputation.record(list(ind.genome), outcomes=ind.outcomes,
+                               report=ind.report, regime=self.regime)
 
     def random_genome(self):
         path: List[str] = []

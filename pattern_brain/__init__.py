@@ -37,6 +37,9 @@ from .evolution import (
     Evolver, ModelEvolver, PathwayEvolver, AlgorithmEvolver,
     Individual, EvolutionResult, directional_candidate_fn,
 )
+from .reputation import (
+    PathwayReputation, PathwayStat, ReputationRouter,
+)
 
 __all__ = [
     "Belief", "SCHEMA_VERSION", "Node",
@@ -57,4 +60,5 @@ __all__ = [
     "nondominated_sort", "pareto_front", "cscv_pbo", "anchor_check",
     "Evolver", "ModelEvolver", "PathwayEvolver", "AlgorithmEvolver",
     "Individual", "EvolutionResult", "directional_candidate_fn",
+    "PathwayReputation", "PathwayStat", "ReputationRouter",
 ]

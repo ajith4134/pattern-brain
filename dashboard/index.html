@@ -415,6 +415,50 @@ function EvolutionView({ color }) {
     </div>`;
 }
 
+// --- Pathways view (closing the loop, Block 17): the Pathway Leaderboard +
+// edge reputations — "the graph itself becomes the memory".
+function PathwaysView() {
+  const [d, setD] = useState(null);
+  useEffect(() => { fetch("/api/reputation").then(r => r.json()).then(setD); }, []);
+  if (!d) return html`<div class="card"><div class="body"><span class="sub">scoring pathways (running evolution)…</span></div></div>`;
+  const lb = d.leaderboard || [];
+  const max = lb.length ? Math.max(...lb.map(p => p.score)) : 1;
+  const tone = (s) => `hsl(${Math.max(0, Math.min(150, (s / (max || 1)) * 150))},70%,55%)`;
+  const edges = Object.entries(d.edges || {}).sort((a, b) => b[1] - a[1]).slice(0, 14);
+  return html`
+    <div class="adapter-grid">
+      <div class="col">
+        <div class="card">
+          <h2>Pathway Leaderboard — reputation = recency-weighted outcome score (Block 17)</h2>
+          <div class="body">
+            ${lb.length === 0 ? html`<span class="sub">no pathways recorded</span>` : null}
+            ${lb.map((p, i) => html`<div class="belief" key=${i}>
+              <div class="top">
+                <span>${p.pathway.map((nt, j) => html`<span class="pill" key=${j}>${nt}</span>${j < p.pathway.length-1 ? " → " : ""}`)}</span>
+                <span class="conf" style=${{ color: tone(p.score) }}>${p.score.toFixed(3)}</span>
+              </div>
+              <div class="src">uses ${p.uses} · mean outcome ${p.mean_outcome.toFixed(3)}</div>
+            </div>`)}
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card">
+          <h2>Top edge reputations</h2>
+          <div class="body">
+            ${edges.map(([e, s], i) => html`<div class="kv" key=${i}>
+              <span>${e.replace("->", " → ")}</span>
+              <span style=${{ color: tone(s) }}>${s.toFixed(3)}</span></div>`)}
+          </div>
+        </div>
+        <div class="card">
+          <h2>Closing the loop</h2>
+          <div class="body"><span class="sub">The Evaluator scores each evolved pathway; the score is remembered here on the pathway and its edges. A <b>ReputationRouter</b> then prefers proven edges, falling back to heuristic exploration on unseen ones — "the graph itself becomes the memory" (Block 17).</span></div>
+        </div>
+      </div>
+    </div>`;
+}
+
 // --- Model Bank view (build step 6). The WHOLE bank — every node, not just the
 // active pathway — laid out as columns by functional layer (the §8 "genome map"
 // precursor). This is the answer to "I only see 4 nodes": the Living-Graph tab
@@ -572,8 +616,8 @@ function App() {
         <h1>🧠 Pattern Brain</h1>
         <div class="tabs">
           ${[["overview","Overview"],["bank","Model Bank"],["evaluator","Evaluator"],
-             ["evolution","Evolution"],["living","Living Graph"],["adapter","Adapter"],
-             ["files","Files"]].map(([k,label]) => html`
+             ["evolution","Evolution"],["pathways","Pathways"],["living","Living Graph"],
+             ["adapter","Adapter"],["files","Files"]].map(([k,label]) => html`
             <button key=${k} class=${"tab" + (view===k ? " active" : "")}
                     onClick=${() => setView(k)}>${label}</button>`)}
         </div>
@@ -589,6 +633,7 @@ function App() {
         : view === "files" ? html`<${FilesView} />`
         : view === "evaluator" ? html`<${EvaluatorView} />`
         : view === "evolution" ? html`<${EvolutionView} color=${color} />`
+        : view === "pathways" ? html`<${PathwaysView} />`
         : view === "adapter" ? html`<${AdapterView} />`
         : view === "bank" ? html`<${BankView} color=${color} />` : html`
       <div class="wrap">

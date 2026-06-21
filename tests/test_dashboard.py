@@ -118,6 +118,17 @@ def test_evolution_endpoint():
     print(f"  GET /api/evolution -> {list(d['features'])}")
 
 
+def test_reputation_endpoint():
+    r = client.get("/api/reputation")
+    check(r.status_code == 200, f"/api/reputation status {r.status_code}")
+    d = r.json()
+    check(len(d["leaderboard"]) >= 1, "reputation leaderboard empty")
+    check(all("pathway" in p and "score" in p for p in d["leaderboard"]),
+          "leaderboard entries missing fields")
+    check(isinstance(d["edges"], dict) and len(d["edges"]) >= 1, "no edge reputations")
+    print(f"  GET /api/reputation -> {len(d['leaderboard'])} pathways, {len(d['edges'])} edges")
+
+
 def test_route_endpoint():
     """Step-4 Connector v1: /api/route returns a router-discovered pathway plus
     the per-hop rationale (the dashboard's routed-pathway card source)."""
@@ -200,6 +211,7 @@ def main():
     test_files_endpoint()
     test_evaluator_endpoint()
     test_evolution_endpoint()
+    test_reputation_endpoint()
     test_route_endpoint()
     test_conformance_endpoint()
     test_adapter_endpoint()
