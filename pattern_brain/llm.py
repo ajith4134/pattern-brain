@@ -128,9 +128,9 @@ CLOUD_PROVIDERS: List[Dict[str, str]] = [
     {"name": "groq",      "env": "GROQ_API_KEY",
      "base_url": "https://api.groq.com/openai/v1", "model": "llama-3.3-70b-versatile"},
     {"name": "cerebras",  "env": "CEREBRAS_API_KEY",
-     "base_url": "https://api.cerebras.ai/v1", "model": "qwen-3-235b-a22b-instruct-2507"},
+     "base_url": "https://api.cerebras.ai/v1", "model": "gpt-oss-120b"},
     {"name": "nvidia",    "env": "NVIDIA_API_KEY",
-     "base_url": "https://integrate.api.nvidia.com/v1", "model": "deepseek-ai/deepseek-v3"},
+     "base_url": "https://integrate.api.nvidia.com/v1", "model": "deepseek-ai/deepseek-v4-flash"},
     {"name": "mistral",   "env": "MISTRAL_API_KEY",
      "base_url": "https://api.mistral.ai/v1", "model": "mistral-large-latest"},
     {"name": "openrouter", "env": "OPENROUTER_API_KEY",
@@ -158,7 +158,12 @@ def _openai_post(base_url: str, api_key: str, payload: Dict[str, Any],
     req = urllib.request.Request(
         base_url.rstrip("/") + "/chat/completions",
         data=json.dumps(payload).encode(),
+        # A browser-like User-Agent: some providers (Groq, Cerebras) sit behind
+        # Cloudflare, which 403s the default "Python-urllib" signature (CF error
+        # 1010). This is a client-fingerprint block, not an auth problem.
         headers={"Content-Type": "application/json",
+                 "Accept": "application/json",
+                 "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) pattern-brain/1.0",
                  "Authorization": f"Bearer {api_key}"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:

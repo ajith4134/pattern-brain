@@ -11,3 +11,8 @@ agent_state/
 *.sqlite
 *.npz
 .pw-browsers/
+
+# Secrets + project-local Ollama (Rule 1: inside the folder, never committed)
+.env
+ollama-bin/
+ollama-models/
