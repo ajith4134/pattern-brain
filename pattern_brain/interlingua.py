@@ -124,6 +124,10 @@ def _seed_catalog_v0_1() -> None:
                        ("action", "arm", "policy", "q_values", "state", "ucb", "values"),
                        "An RL action/policy output. LOOSE: payload varies across "
                        "RL nodes — candidate for tightening (see coherence)."))
+    R(BeliefTypeSchema("pattern", ("patterns", "n_patterns"),
+                       ("support", "alphabet", "predicted_next", "series", "algorithm"),
+                       "Discovered frequent itemsets / sequential patterns "
+                       "(pattern-mining family: Apriori/ECLAT/FP-Growth/PrefixSpan/GSP/SPADE)."))
 
 
 _seed_catalog_v0_1()

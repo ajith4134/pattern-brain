@@ -10,6 +10,7 @@ from . import probability # noqa: F401
 from . import equation    # noqa: F401
 from . import decision    # noqa: F401
 from . import rl          # noqa: F401
-from . import physics      # noqa: F401  (Phase 7e: physics/PhD-tier light-stack nodes)
-from . import econometrics # noqa: F401  (Phase 7a: classical econometrics + volatility)
+from . import physics       # noqa: F401  (Phase 7e: physics/PhD-tier light-stack nodes)
+from . import econometrics  # noqa: F401  (Phase 7a: classical econometrics + volatility)
+from . import patternmining # noqa: F401  (Phase 7b: frequent + sequential pattern mining)
 from . import deep         # noqa: F401  (deep/PyTorch nodes — only register if torch is installed)
