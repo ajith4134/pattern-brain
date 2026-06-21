@@ -189,6 +189,22 @@ def test_adapter_endpoint():
           f"-> {d['trace']['output']['type']}")
 
 
+def test_coverage_endpoint():
+    """Catalog-vs-built coverage meter: per-family ✅/🟡/❌ with built/missing lists."""
+    r = client.get("/api/coverage")
+    check(r.status_code == 200, f"/api/coverage status {r.status_code}")
+    d = r.json()
+    check(d["n_registered_nodes"] >= 100, "too few registered nodes")
+    check(len(d["families"]) >= 15, "coverage should cover >=15 families")
+    fam = {f["family"]: f for f in d["families"]}
+    check(fam["Pattern mining"]["status"] == "complete", "pattern-mining should be complete (7b)")
+    check(all(f["n_built"] + len(f["missing"]) == f["n_target"] for f in d["families"]),
+          "built+missing must equal target per family")
+    check(0 <= d["curated_pct"] <= 100, "curated_pct out of range")
+    print(f"  GET /api/coverage -> {d['curated_built']}/{d['curated_target']} ({d['curated_pct']}%), "
+          f"{len(d['families'])} families")
+
+
 def test_galton_endpoint():
     """The Galton board: bins, random counts, exact Binomial, and Normal overlay."""
     r = client.get("/api/galton?rows=10&balls=3000")
@@ -269,6 +285,7 @@ def main():
     test_route_endpoint()
     test_conformance_endpoint()
     test_adapter_endpoint()
+    test_coverage_endpoint()
     test_galton_endpoint()
     test_knowledge_endpoint()
     test_agent_status_and_step_and_chat()

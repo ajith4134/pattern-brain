@@ -403,6 +403,12 @@ def evolution() -> JSONResponse:
     return JSONResponse(_evolution_payload())
 
 
+@app.get("/api/coverage")
+def coverage_endpoint() -> JSONResponse:
+    """Catalog-vs-built coverage meter (PLAN §11): per-family ✅/🟡/❌ toward ~500."""
+    return JSONResponse(pb.coverage())
+
+
 # --------------------------------------------------- ML Engineer Agent (ENG-4)
 _AGENT = None
 _AGENT_LOCK = threading.Lock()

@@ -538,6 +538,47 @@ function BankView({ color }) {
     </div>`;
 }
 
+// --- Coverage meter: catalog-vs-built per family (✅/🟡/❌) toward the ~500-node goal.
+function CoverageView() {
+  const [d, setD] = useState(null);
+  useEffect(() => { fetch("/api/coverage").then(r => r.json()).then(setD); }, []);
+  if (!d) return html`<div class="card"><div class="body"><span class="sub">loading coverage…</span></div></div>`;
+  const icon = s => ({ complete: "✅", partial: "🟡", missing: "❌" }[s] || "·");
+  const barColor = s => ({ complete: "#34d399", partial: "#f59e0b", missing: "#6b7280" }[s]);
+  return html`
+    <div style=${{ padding: "4px" }}>
+      <div class="card">
+        <h2>📊 Model coverage — catalog vs built (toward ~${d.full_catalog_target} nodes)</h2>
+        <div class="tiles">
+          <div class="tile"><div class="big">${d.n_registered_nodes}</div><div class="lbl">registered nodes</div></div>
+          <div class="tile"><div class="big">${d.curated_pct}%</div><div class="lbl">curated families covered</div></div>
+          <div class="tile"><div class="big">${d.curated_built}/${d.curated_target}</div><div class="lbl">key models built</div></div>
+          <div class="tile"><div class="big">${d.families.filter(f=>f.status==="complete").length}/${d.families.length}</div><div class="lbl">families complete</div></div>
+        </div>
+        <div class="hint">A family item is "built" if a registered node matches it. Tracks curated key models per family
+          (the full catalog is ~${d.full_catalog_target}+ counting every variant). ❌/🟡 = the Phase-7 roadmap.</div>
+      </div>
+      <div class="card">
+        <h2>By family</h2>
+        <div class="body">
+          ${d.families.map((f,i) => html`<div key=${i} style=${{ margin: "10px 0" }}>
+            <div style=${{ display: "flex", justifyContent: "space-between" }}>
+              <span>${icon(f.status)} <b>${f.family}</b></span>
+              <span class="sub">${f.n_built}/${f.n_target}</span>
+            </div>
+            <div style=${{ background: "var(--panel2)", borderRadius: "5px", height: "8px", margin: "4px 0", overflow: "hidden" }}>
+              <div style=${{ width: f.pct + "%", height: "100%", background: barColor(f.status) }}></div>
+            </div>
+            <div style=${{ display: "flex", flexWrap: "wrap", gap: "3px" }}>
+              ${f.built.map((b,j) => html`<span key=${"b"+j} class="kindtag" style=${{ color: "#34d399" }}>✓ ${b}</span>`)}
+              ${f.missing.map((m,j) => html`<span key=${"m"+j} class="kindtag" style=${{ opacity: .6 }}>○ ${m}</span>`)}
+            </div>
+          </div>`)}
+        </div>
+      </div>
+    </div>`;
+}
+
 // --- Galton board: the "magic of probability" — drop balls through pegs (50/50
 // each), watch the Binomial histogram converge to the Normal (the CLT, live). The
 // intuition pump for the probability layer: individual chance -> collective law.
@@ -835,7 +876,7 @@ function App() {
       <header>
         <h1>🧠 Pattern Brain</h1>
         <div class="tabs">
-          ${[["overview","Overview"],["engineer","🤖 ML Engineer"],["galton","🎲 Galton"],["bank","Model Bank"],["evaluator","Evaluator"],
+          ${[["overview","Overview"],["engineer","🤖 ML Engineer"],["coverage","📊 Coverage"],["galton","🎲 Galton"],["bank","Model Bank"],["evaluator","Evaluator"],
              ["evolution","Evolution"],["pathways","Pathways"],["living","Living Graph"],
              ["adapter","Adapter"],["files","Files"]].map(([k,label]) => html`
             <button key=${k} class=${"tab" + (view===k ? " active" : "")}
@@ -851,6 +892,7 @@ function App() {
 
       ${view === "overview" ? html`<${OverviewView} color=${color} setView=${setView} />`
         : view === "engineer" ? html`<${EngineerView} color=${color} />`
+        : view === "coverage" ? html`<${CoverageView} />`
         : view === "galton" ? html`<${GaltonView} />`
         : view === "files" ? html`<${FilesView} />`
         : view === "evaluator" ? html`<${EvaluatorView} />`

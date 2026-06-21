@@ -41,6 +41,7 @@ from .evolution import (
 from .reputation import (
     PathwayReputation, PathwayStat, ReputationRouter,
 )
+from .coverage import coverage, CATALOG as COVERAGE_CATALOG
 from .knowledge import (
     Embedder, HashingEmbedder, STEmbedder, OllamaEmbedder, default_embedder, chunk_text,
     VectorStore, Passage, Retrieval, KnowledgeBase, BookRef,
@@ -76,6 +77,7 @@ __all__ = [
     "Evolver", "ModelEvolver", "PathwayEvolver", "AlgorithmEvolver",
     "Individual", "EvolutionResult", "directional_candidate_fn",
     "PathwayReputation", "PathwayStat", "ReputationRouter",
+    "coverage", "COVERAGE_CATALOG",
     "Embedder", "HashingEmbedder", "STEmbedder", "OllamaEmbedder", "default_embedder", "chunk_text",
     "VectorStore", "Passage", "Retrieval", "KnowledgeBase", "BookRef",
     "BOOK_MANIFEST", "book_manifest", "DEFAULT_STORE_DIR",
