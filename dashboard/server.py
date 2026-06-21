@@ -510,4 +510,9 @@ def _prewarm() -> None:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8077)
+    # Secure-by-default: localhost only. Set PB_DASH_HOST=0.0.0.0 to expose on the
+    # VPS public IP (the dashboard + chat spend API keys, so only do this behind a
+    # firewall). Port overridable via PB_DASH_PORT.
+    host = os.environ.get("PB_DASH_HOST", "127.0.0.1")
+    port = int(os.environ.get("PB_DASH_PORT", "8077"))
+    uvicorn.run(app, host=host, port=port)
