@@ -36,7 +36,10 @@ Completer = Callable[[str, str, List[Dict[str, Any]]], Dict[str, Any]]
 # A conversational callable: a list of {role, content} messages -> assistant text.
 TextCompleter = Callable[..., str]
 
-DEFAULT_OLLAMA_MODEL = "qwen2.5-coder:7b"   # the project-local model we pull (Block 56)
+# Project-local model (Block 56). Default is the 7B (best speed/quality on a
+# no-GPU box); set OLLAMA_MODEL=qwen2.5-coder:14b for higher quality when you can
+# accept slower replies — no code change needed.
+DEFAULT_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5-coder:7b")
 DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"  # small/fast is ideal for routing
 
 
