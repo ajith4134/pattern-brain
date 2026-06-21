@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
@@ -76,7 +77,8 @@ class MLEngineerAgent:
                  features: Optional[List[str]] = None,
                  data_source: str = "synthetic",
                  population: int = 6, generations: int = 2,
-                 max_promotions: int = 50, seed: int = 0) -> None:
+                 max_promotions: int = 50, seed: int = 0,
+                 auto_ingest_books: bool = True) -> None:
         self.toolbox = toolbox or Toolbox()
         self.llm_chat = llm_chat
         self.state_dir = state_dir
@@ -87,6 +89,12 @@ class MLEngineerAgent:
         self.max_promotions = max_promotions
         self.rng = np.random.default_rng(seed)
         self._seed = seed
+        # the agent "comes up with all the books and converts them into a vector DB"
+        # on its own (owner's requirement): on first use it ingests the curated
+        # ML-engineering corpus into the KB, in the background so it never blocks
+        # the loop. Best-effort — a failed fetch is skipped, not fatal.
+        self.auto_ingest_books = auto_ingest_books
+        self._books_started = False
         # learned-so-far state (persisted)
         self.steps_done = 0
         self.promotions = 0
@@ -94,8 +102,34 @@ class MLEngineerAgent:
         self.scoreboard: Dict[str, Dict[str, float]] = {f: {"runs": 0.0, "admitted": 0.0}
                                                          for f in self.features}
 
+    # ------------------------------------------------- knowledge bootstrapping
+    def ingest_books(self, max_chars: int = 40000) -> dict:
+        """Fetch the curated ML-engineering book corpus and convert it into the
+        vector DB (synchronous). Returns {title: n_chunks}. Best-effort per book."""
+        res = self.toolbox.ingest_books(max_chars=max_chars)
+        self.toolbox.remember(
+            f"Ingested book corpus into the vector DB: "
+            f"{sum(res.values())} passages from {sum(1 for v in res.values() if v)} sources.",
+            kind="knowledge")
+        return res
+
+    def ensure_books(self) -> None:
+        """Trigger book ingestion ONCE, in a background thread (non-blocking) so the
+        agent self-populates its literature KB without stalling the loop."""
+        if not self.auto_ingest_books or self._books_started:
+            return
+        self._books_started = True
+
+        def _work():
+            try:
+                self.ingest_books()
+            except Exception:
+                pass
+        threading.Thread(target=_work, daemon=True).start()
+
     # --------------------------------------------------------- the OODA step
     def step(self) -> StepResult:
+        self.ensure_books()
         n = self.steps_done + 1
         # --- Observe ---
         observe = self.toolbox.observe_state()
@@ -262,6 +296,7 @@ class MLEngineerAgent:
     def chat(self, message: str, history: Optional[List[Dict[str, str]]] = None) -> str:
         """Converse with the agent (ENG-4). Works offline (templated reply) or via
         an injected LLM text-completer, grounded in live state + retrieved knowledge."""
+        self.ensure_books()
         observe = self.toolbox.observe_state()
         kn = self.toolbox.retrieve_knowledge(message, k=3)
         recalls = self.toolbox.recall_memory(message, k=3)

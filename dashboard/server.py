@@ -418,7 +418,15 @@ def _agent():
             from pattern_brain.agent import MLEngineerAgent
             chat, _name = pb.auto_text_completer()
             _AGENT = MLEngineerAgent(llm_chat=chat)
+            _AGENT.ensure_books()      # self-populate the book vector DB in the background
         return _AGENT
+
+
+@app.post("/api/agent/ingest_books")
+def agent_ingest_books() -> JSONResponse:
+    """Convert the curated ML-engineering book corpus into the vector DB (sync)."""
+    res = _agent().ingest_books()
+    return JSONResponse({"ingested": res, "stats": _agent().toolbox.knowledge.stats()})
 
 
 @app.get("/api/knowledge")

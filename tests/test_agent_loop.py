@@ -30,6 +30,7 @@ def _agent(**kw):
     shutil.rmtree(sd, ignore_errors=True)
     box = Toolbox(knowledge=KnowledgeBase(),
                   data_dir=os.path.join(PROJECT_ROOT, "data", "_test_loop"))
+    kw.setdefault("auto_ingest_books", False)   # keep tests offline (no real fetches)
     return MLEngineerAgent(toolbox=box, state_dir=sd, population=5, generations=2, **kw)
 
 
@@ -146,6 +147,30 @@ def test_llm_researcher_decision():
     print("  researcher: LLM JSON decision drives feature/mode selection")
 
 
+def test_auto_ingest_books():
+    """The agent self-populates its vector DB from the book corpus (offline via an
+    injected fetcher) — the owner's 'come up with all the books -> vector db'."""
+    from pattern_brain.agent import Toolbox
+    pages = {b["url"]: "model evaluation cross validation overfitting generalization " * 50
+             for b in __import__("pattern_brain").book_manifest()}
+    box = Toolbox(knowledge=KnowledgeBase(), fetch=lambda u: pages.get(u, "x").encode())
+    sd = os.path.join(PROJECT_ROOT, "agent_state", "_test_ing")
+    shutil.rmtree(sd, ignore_errors=True)
+    a = MLEngineerAgent(toolbox=box, state_dir=sd, auto_ingest_books=True)
+    try:
+        res = a.ingest_books()                      # synchronous ingest
+        check(sum(res.values()) > 0, "no book passages ingested")
+        check(a.toolbox.knowledge.stats()["passages"] > 0, "vector DB still empty after ingest")
+        hits = a.toolbox.retrieve_knowledge("overfitting and cross validation", k=2)
+        check(len(hits) >= 1, "cannot retrieve from the ingested corpus")
+        # ensure_books fires only once
+        a.ensure_books(); check(a._books_started, "ensure_books didn't latch")
+    finally:
+        shutil.rmtree(sd, ignore_errors=True)
+        shutil.rmtree(a.toolbox.data_dir, ignore_errors=True)
+    print(f"  auto-ingest: agent converted {sum(res.values())} book passages into the vector DB")
+
+
 def test_domain_independence():
     import tokenize
     forbidden = ("candle", "ohlcv", "orderbook", "order_book")
@@ -170,6 +195,7 @@ def main():
     test_state_persistence_inside_folder()
     test_chat_offline_and_with_llm()
     test_llm_researcher_decision()
+    test_auto_ingest_books()
     test_domain_independence()
     print("=" * 70)
     if FAILS:
