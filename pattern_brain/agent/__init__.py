@@ -7,5 +7,9 @@ folder (Rule 1 clarification).
 from .tools import (
     Toolbox, RunResult, synthetic_dataset, DEFAULT_DATA_DIR,
 )
+from .engineer import (
+    MLEngineerAgent, StepResult, PERSONA, FEATURES, DEFAULT_STATE_DIR,
+)
 
-__all__ = ["Toolbox", "RunResult", "synthetic_dataset", "DEFAULT_DATA_DIR"]
+__all__ = ["Toolbox", "RunResult", "synthetic_dataset", "DEFAULT_DATA_DIR",
+           "MLEngineerAgent", "StepResult", "PERSONA", "FEATURES", "DEFAULT_STATE_DIR"]
