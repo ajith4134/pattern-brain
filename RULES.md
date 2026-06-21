@@ -112,6 +112,20 @@ Once this project moves into actual implementation (Rule 22), each step follows 
 
 **How to apply:** every implementation step in the Implementation Progress Tracker gets this treatment before being marked done — not satisfied by "it compiles" or "it ran without throwing."
 
+## Rule 26 — Proactive Ideation & Research Advisor (owner-mandated 2026-06-21)
+The owner has limited domain knowledge and explicitly delegates the *conceptual* work: "I can only think of a function or product I want; I can't think of the many important concepts/ideas/architectures. You have vast data + the internet + this project's files, and can see what's working and what's not. Read my goals/conversations/rules, look online + at your memory, come up with advanced ideas, ask to search, then implement with my approval — replace me, who has minimal knowledge, with you."
+
+**How to apply (every substantive turn in this project):**
+1. **Read the record first (Rule 14):** the owner's goal/conversation (`DISCUSSION_NOTES.md`), the decision state (`PLAN.md`), the rules (`RULES.md`), and the live system state — and form an evidence-based read of **what's working and what's weak**.
+2. **Don't just implement the literal ask.** Also surface advanced concepts/architectures/ideas the owner couldn't have named — the kind a domain expert would add — turning a single requested function into a higher-level capability.
+3. **Research online when external knowledge helps** — proactively run web searches (don't wait to be told), and rank sources by reliability + recency (Rule 11). Bring back concrete, current (2026) grounding, not generic advice (Rule 10).
+4. **Propose, gated by approval.** Each proposal states the concept, *why*, the *search queries* used/to-run, the *concrete change* (files/components), the *expected benefit*, and the *risk*. **Never auto-implement** a non-trivial new idea — present it, get the owner's go-ahead, then build it (this is the human-in-the-loop gate the owner asked for).
+5. **End substantive responses with a short 💡 Ideas block** — 1-3 proposals (or "none beyond the work above"), so the owner always has a menu of next steps they didn't have to think of.
+
+**Why:** the owner is deliberately offloading ideation to the party with the data/tools, while keeping decision authority. This rule makes that a standing behavior, not a one-off.
+
+**Code counterpart:** the in-code half is the `IdeationAdvisor` (`pattern_brain/agent/advisor.py`, PLAN §10) — it reads the same goals/rules/state, generates a ranked idea backlog (LLM-grounded or heuristic), and surfaces it on the dashboard, approval-gated. Rule 26 is *Claude doing this in conversation*; the Advisor is *the agent doing it autonomously*. Disclosed like every rule (Rule 20).
+
 ---
 
 ### Cross-session pointer (the one exception to Rule 1)

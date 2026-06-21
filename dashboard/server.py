@@ -429,6 +429,40 @@ def agent_ingest_books() -> JSONResponse:
     return JSONResponse({"ingested": res, "stats": _agent().toolbox.knowledge.stats()})
 
 
+# --------------------------------- Ideation & Research Advisor (Rule 26 / §10)
+_ADVISOR = None
+
+
+def _advisor():
+    global _ADVISOR
+    with _AGENT_LOCK:
+        if _ADVISOR is None:
+            from pattern_brain.agent import IdeationAdvisor
+            a = _agent()
+            _ADVISOR = IdeationAdvisor(toolbox=a.toolbox, llm_chat=a.llm_chat)
+        return _ADVISOR
+
+
+@app.get("/api/advisor/ideas")
+def advisor_ideas() -> JSONResponse:
+    adv = _advisor()
+    return JSONResponse({"ideas": adv.list_ideas(), "context": adv.gather_context()})
+
+
+@app.post("/api/advisor/generate")
+def advisor_generate() -> JSONResponse:
+    added = _advisor().generate(n=5)
+    return JSONResponse({"added": [i.to_dict() for i in added],
+                         "ideas": _advisor().list_ideas()})
+
+
+@app.post("/api/advisor/status")
+async def advisor_status(request: Request) -> JSONResponse:
+    body = await request.json()
+    ok = _advisor().set_status(body.get("id", ""), body.get("status", "proposed"))
+    return JSONResponse({"ok": ok, "ideas": _advisor().list_ideas()})
+
+
 @app.get("/api/knowledge")
 def knowledge() -> JSONResponse:
     """ENG-1 view data: book manifest + knowledge-base stats + LLM engine status."""

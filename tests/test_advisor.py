@@ -1,0 +1,140 @@
+"""Tests for the Ideation & Research Advisor (PLAN.md §10 / Rule 26).
+
+Run: python3 tests/test_advisor.py — fully offline (heuristic path + injected LLM).
+"""
+from __future__ import annotations
+
+import os
+import shutil
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from pattern_brain.knowledge import KnowledgeBase, PROJECT_ROOT
+from pattern_brain.agent import Toolbox, IdeationAdvisor
+
+FAILS = []
+
+
+def check(cond, msg):
+    if not bool(cond):
+        FAILS.append(msg)
+    return bool(cond)
+
+
+def _advisor(**kw):
+    sd = os.path.join(PROJECT_ROOT, "agent_state", "_test_adv")
+    shutil.rmtree(sd, ignore_errors=True)
+    return IdeationAdvisor(toolbox=Toolbox(knowledge=KnowledgeBase()), state_dir=sd, **kw)
+
+
+def test_gather_context_reads_project():
+    a = _advisor()
+    try:
+        ctx = a.gather_context()
+        check(len(ctx["bank_by_layer"]) == 8, "should see all 8 layers")
+        check(len(ctx["weakest_layers"]) >= 1, "no weakest layer identified")
+        check(isinstance(ctx["open_plan_items"], list), "open items not a list")
+        check("Pattern Brain" in ctx["goal_excerpt"], "didn't read README goal")
+    finally:
+        shutil.rmtree(a.state_dir, ignore_errors=True)
+    print(f"  context: 8 layers, weakest={ctx['weakest_layers']}, "
+          f"{len(ctx['open_plan_items'])} open plan items read")
+
+
+def test_heuristic_ideas_are_grounded():
+    a = _advisor()
+    try:
+        ideas = a.generate(n=5)
+        check(len(ideas) >= 3, "too few heuristic ideas")
+        check(all(i.search_queries for i in ideas), "an idea has no search queries")
+        check(all(i.proposed_change for i in ideas), "an idea has no proposed change")
+        check(any("layer" in i.title.lower() for i in ideas), "no weak-layer idea")
+        check(all(i.status == "proposed" for i in ideas), "ideas should start 'proposed'")
+    finally:
+        shutil.rmtree(a.state_dir, ignore_errors=True)
+    print(f"  heuristic: {len(ideas)} grounded ideas, each with search queries + a proposed change")
+
+
+def test_llm_ideas_path():
+    fake = '[{"title":"Add conformal prediction","concept":"wrap forecasts with '\
+           'calibrated intervals","why":"uncertainty","search_queries":["conformal '\
+           'prediction time series 2026"],"proposed_change":"new node","expected_benefit":'\
+           '"calibrated risk","risk":"compute"}]'
+    a = _advisor(llm_chat=lambda messages, temperature=0.4: fake)
+    try:
+        ideas = a.generate(n=3)
+        check(any("conformal" in i.title.lower() for i in ideas), "LLM idea not parsed")
+        check(any(i.source == "llm" for i in ideas), "LLM source not tagged")
+    finally:
+        shutil.rmtree(a.state_dir, ignore_errors=True)
+    print("  llm: JSON idea array from the LLM parsed into structured proposals")
+
+
+def test_status_lifecycle_and_persistence():
+    a = _advisor()
+    try:
+        ideas = a.generate(n=3)
+        iid = ideas[0].id
+        check(a.set_status(iid, "approved"), "set_status failed")
+        check(not a.set_status("nope", "approved"), "unknown id should return False")
+        try:
+            a.set_status(iid, "bogus"); check(False, "bad status should raise")
+        except ValueError:
+            pass
+        # reload from disk -> approval persisted (survives restart, inside folder)
+        b = IdeationAdvisor(toolbox=Toolbox(knowledge=KnowledgeBase()), state_dir=a.state_dir)
+        check(any(i["id"] == iid and i["status"] == "approved" for i in b.list_ideas()),
+              "approval not persisted")
+        check(os.path.abspath(a.save()).startswith(PROJECT_ROOT + os.sep),
+              "ideas saved outside folder (Rule 1)")
+    finally:
+        shutil.rmtree(a.state_dir, ignore_errors=True)
+    print("  lifecycle: proposed→approved persists across restart; never auto-implements")
+
+
+def test_does_not_implement():
+    """Approval-gated: the advisor only proposes — it has no method that mutates the bank."""
+    a = _advisor()
+    try:
+        for attr in ("register", "promote", "create_node", "implement"):
+            check(not hasattr(a, attr), f"advisor must NOT have an implementing method: {attr}")
+    finally:
+        shutil.rmtree(a.state_dir, ignore_errors=True)
+    print("  safety: advisor proposes only — no implementing method (approval-gated)")
+
+
+def test_domain_independence():
+    import tokenize
+    forbidden = ("candle", "ohlcv", "orderbook", "order_book")
+    path = os.path.join(PROJECT_ROOT, "pattern_brain", "agent", "advisor.py")
+    hits = []
+    with tokenize.open(path) as fh:
+        for tok in tokenize.generate_tokens(fh.readline):
+            if tok.type == tokenize.NAME and any(b in tok.string.lower() for b in forbidden):
+                hits.append(tok.string)
+    check(not hits, f"domain-coupling identifiers in advisor.py: {hits}")
+    print("  domain-independence: advisor.py clean")
+
+
+def main():
+    print("=" * 70)
+    print("Pattern Brain — Ideation & Research Advisor (Rule 26): tests")
+    print("=" * 70)
+    test_gather_context_reads_project()
+    test_heuristic_ideas_are_grounded()
+    test_llm_ideas_path()
+    test_status_lifecycle_and_persistence()
+    test_does_not_implement()
+    test_domain_independence()
+    print("=" * 70)
+    if FAILS:
+        print(f"FAILED: {len(FAILS)} check(s):")
+        for f in FAILS:
+            print("  - " + f)
+        sys.exit(1)
+    print("ALL CHECKS PASSED")
+
+
+if __name__ == "__main__":
+    main()

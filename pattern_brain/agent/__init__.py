@@ -10,6 +10,8 @@ from .tools import (
 from .engineer import (
     MLEngineerAgent, StepResult, PERSONA, FEATURES, DEFAULT_STATE_DIR,
 )
+from .advisor import IdeationAdvisor, Idea, KNOWN_GAPS
 
 __all__ = ["Toolbox", "RunResult", "synthetic_dataset", "DEFAULT_DATA_DIR",
-           "MLEngineerAgent", "StepResult", "PERSONA", "FEATURES", "DEFAULT_STATE_DIR"]
+           "MLEngineerAgent", "StepResult", "PERSONA", "FEATURES", "DEFAULT_STATE_DIR",
+           "IdeationAdvisor", "Idea", "KNOWN_GAPS"]

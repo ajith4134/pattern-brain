@@ -603,11 +603,24 @@ function EngineerView({ color }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [chat, setChat] = useState([]);
+  const [ideas, setIdeas] = useState([]);
+  const [genBusy, setGenBusy] = useState(false);
   const refresh = useCallback(() => {
     fetch("/api/knowledge").then(r => r.json()).then(setKn);
     fetch("/api/agent/status").then(r => r.json()).then(setStatus);
+    fetch("/api/advisor/ideas").then(r => r.json()).then(d => setIdeas(d.ideas || []));
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
+  const genIdeas = async () => {
+    setGenBusy(true);
+    try { const d = await fetch("/api/advisor/generate", {method:"POST"}).then(x=>x.json());
+          setIdeas(d.ideas || []); } finally { setGenBusy(false); }
+  };
+  const setIdeaStatus = async (id, status) => {
+    const d = await fetch("/api/advisor/status", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({id, status})}).then(x=>x.json());
+    setIdeas(d.ideas || []);
+  };
 
   const runStep = async () => {
     setBusy(true);
@@ -698,6 +711,35 @@ function EngineerView({ color }) {
                    onKeyDown=${e => { if (e.key === "Enter") send(); }} />
             <button onClick=${send}>send</button>
           </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>💡 Ideation & Research Advisor (Rule 26) — ideas it proposes for you</h2>
+        <div class="hint">Turns your goals into advanced concepts/architectures you didn't have to think of —
+          grounded in the project state + literature. Each idea carries the search queries to verify it and a
+          concrete proposed change. It only <b>proposes</b>; you approve, then it gets built.</div>
+        <div style=${{ margin: "8px 0" }}>
+          <button onClick=${genIdeas} disabled=${genBusy}>${genBusy ? "thinking…" : "💡 Generate ideas"}</button>
+          <button onClick=${refresh} style=${{ marginLeft: "8px" }}>↻ refresh</button>
+        </div>
+        <div class="body">
+          ${ideas.length === 0 ? html`<span class="sub">No ideas yet — click "Generate ideas".</span>` : null}
+          ${ideas.map((it,i) => html`<div key=${i} style=${{ borderLeft: "3px solid "
+              + (it.status==="approved" ? "#34d399" : it.status==="dismissed" ? "#6b7280" : "#f59e0b"),
+              padding: "6px 10px", margin: "8px 0", background: "var(--panel2)", borderRadius: "6px" }}>
+            <div><b style=${{ color: "#e5e7eb" }}>${it.title}</b>
+              <span class="kindtag" style=${{ marginLeft: "6px" }}>${it.status}</span>
+              <span class="kindtag">${it.source}</span></div>
+            <div style=${{ color: "#bcd", margin: "4px 0" }}>${it.concept}</div>
+            <div class="sub">why: ${it.why}</div>
+            <div class="sub">proposed: ${it.proposed_change}</div>
+            <div class="sub">🔎 ${(it.search_queries||[]).join("  ·  ")}</div>
+            <div style=${{ marginTop: "4px" }}>
+              <button onClick=${() => setIdeaStatus(it.id, "approved")}>✓ approve</button>
+              <button onClick=${() => setIdeaStatus(it.id, "dismissed")} style=${{ marginLeft: "6px" }}>✕ dismiss</button>
+            </div>
+          </div>`)}
         </div>
       </div>
 
