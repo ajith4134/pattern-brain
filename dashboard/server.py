@@ -34,10 +34,11 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import threading
 from functools import lru_cache
 
 import numpy as np
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -400,6 +401,57 @@ def evaluator() -> JSONResponse:
 @app.get("/api/evolution")
 def evolution() -> JSONResponse:
     return JSONResponse(_evolution_payload())
+
+
+# --------------------------------------------------- ML Engineer Agent (ENG-4)
+_AGENT = None
+_AGENT_LOCK = threading.Lock()
+
+
+def _agent():
+    """Lazy singleton agent shared across requests. Wired to a real LLM text
+    backend if one is configured (cloud key or Ollama), else the offline templated
+    chat — the same graceful degradation as everywhere else."""
+    global _AGENT
+    with _AGENT_LOCK:
+        if _AGENT is None:
+            from pattern_brain.agent import MLEngineerAgent
+            chat, _name = pb.auto_text_completer()
+            _AGENT = MLEngineerAgent(llm_chat=chat)
+        return _AGENT
+
+
+@app.get("/api/knowledge")
+def knowledge() -> JSONResponse:
+    """ENG-1 view data: book manifest + knowledge-base stats + LLM engine status."""
+    a = _agent()
+    return JSONResponse({"stats": a.toolbox.knowledge.stats(),
+                         "books": pb.book_manifest(),
+                         "llm": pb.llm_backend_status()})
+
+
+@app.get("/api/agent/status")
+def agent_status() -> JSONResponse:
+    return JSONResponse(_agent().status())
+
+
+@app.post("/api/agent/step")
+def agent_step() -> JSONResponse:
+    """Run ONE OODA loop step (Observe→Orient→Decide→Act→Rank/Record)."""
+    a = _agent()
+    with _AGENT_LOCK:
+        r = a.step()
+    return JSONResponse({"result": r.to_dict(), "status": a.status()})
+
+
+@app.post("/api/agent/chat")
+async def agent_chat(request: Request) -> JSONResponse:
+    """Converse with the agent (the owner's 'talk to it like this session')."""
+    body = await request.json()
+    message = (body or {}).get("message", "")
+    history = (body or {}).get("history", [])
+    reply = _agent().chat(message, history=history)
+    return JSONResponse({"reply": reply})
 
 
 @app.websocket("/ws/run")

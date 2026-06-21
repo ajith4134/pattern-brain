@@ -538,6 +538,120 @@ function BankView({ color }) {
     </div>`;
 }
 
+// --- ML Engineer Agent view (ENG-4): LLM engine + knowledge base + the live
+// closed loop + a chat box to converse with the agent like a Claude session.
+function EngineerView({ color }) {
+  const [kn, setKn] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [feed, setFeed] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [chat, setChat] = useState([]);
+  const refresh = useCallback(() => {
+    fetch("/api/knowledge").then(r => r.json()).then(setKn);
+    fetch("/api/agent/status").then(r => r.json()).then(setStatus);
+  }, []);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const runStep = async () => {
+    setBusy(true);
+    try {
+      const r = await fetch("/api/agent/step", { method: "POST" }).then(x => x.json());
+      setFeed(f => [r.result, ...f].slice(0, 50));
+      setStatus(r.status);
+    } finally { setBusy(false); }
+  };
+  const send = async () => {
+    const m = msg.trim(); if (!m) return;
+    setChat(c => [...c, { role: "user", content: m }]); setMsg("");
+    const r = await fetch("/api/agent/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: m }) }).then(x => x.json());
+    setChat(c => [...c, { role: "assistant", content: r.reply }]);
+  };
+
+  const inp = { background: "var(--panel2)", color: "var(--txt)", border: "1px solid var(--line)",
+                borderRadius: "6px", padding: "8px 10px", fontFamily: "inherit", width: "100%" };
+  const llm = kn && kn.llm;
+  return html`
+    <div style=${{ padding: "4px" }}>
+      <div class="card">
+        <h2>🤖 The ML Engineer — autonomous continuous-learning loop</h2>
+        <div class="hint">Observe → Orient (literature + memory) → Decide (AIDE draft/improve) →
+          Act (create/mutate models, algorithms, pathways) → Rank (Evaluator gate) →
+          promote winners into the model nodes. Runs forever; here you can drive it step-by-step and talk to it.</div>
+        ${status ? html`<div class="tiles">
+          <div class="tile"><div class="big">${status.steps_done}</div><div class="lbl">loop steps</div></div>
+          <div class="tile"><div class="big">${status.promotions}</div><div class="lbl">models promoted</div></div>
+          <div class="tile"><div class="big">${status.llm ? "LLM" : "offline"}</div><div class="lbl">brain</div></div>
+          <div class="tile"><div class="big">${status.stopped ? "STOP" : "ready"}</div><div class="lbl">state</div></div>
+        </div>` : null}
+        <div style=${{ marginTop: "8px" }}>
+          <button onClick=${runStep} disabled=${busy}>${busy ? "running…" : "▶ Run one loop step"}</button>
+          <button onClick=${refresh} style=${{ marginLeft: "8px" }}>↻ refresh</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>🧠 LLM Engine (the agent's brain) — Block 56 sweep</h2>
+        <div class="body">
+          ${llm ? html`
+            <div class="kv"><span>active backend</span><span style=${{ color: "#5eead4" }}>${llm.router}</span></div>
+            <div class="kv"><span>cloud available</span><span>${(llm.cloud_available||[]).join(", ") || "none (set a key)"}</span></div>
+            <div class="kv"><span>local Ollama</span><span>${llm.ollama_available ? "✓" : "—"}</span></div>
+            <div style=${{ marginTop: "8px" }}>priority chain:</div>
+            <div>${(llm.chain||[]).map((c,i) => html`<span class="kindtag" key=${i} style=${{ margin: "2px" }}>${c}</span>`)}</div>
+            <div class="hint">Cloud-primary for reasoning, local Ollama + offline heuristic as fallback. Set ZAI_API_KEY / DEEPSEEK_API_KEY / etc. to light up the free clouds.</div>
+          ` : html`<span class="sub">loading…</span>`}
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>📚 Knowledge Base (books → vector DB) + the agent's memory</h2>
+        <div class="body">
+          ${kn ? html`
+            <div class="kv"><span>passages indexed</span><span>${kn.stats.passages}</span></div>
+            <div class="kv"><span>archival memories (own findings)</span><span>${kn.stats.archival}</span></div>
+            <div class="kv"><span>embedder</span><span>${kn.stats.embedder} (dim ${kn.stats.dim})</span></div>
+            <div style=${{ marginTop: "8px" }}>Open-access ML-engineering corpus (fetched on demand):</div>
+            ${kn.books.map((b,i) => html`<div class="kv" key=${i}>
+              <span><a href=${b.url} target="_blank" style=${{ color: "#7dd3fc" }}>${b.title}</a></span>
+              <span class="kindtag">${b.kind}</span></div>`)}
+          ` : html`<span class="sub">loading…</span>`}
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>💬 Talk to the ML Engineer</h2>
+        <div class="body">
+          <div style=${{ maxHeight: "260px", overflow: "auto", marginBottom: "8px" }}>
+            ${chat.length === 0 ? html`<span class="sub">Ask it anything — e.g. "what's the state of the bank?" or "what should we try next?"</span>` : null}
+            ${chat.map((m,i) => html`<div key=${i} style=${{ margin: "6px 0" }}>
+              <b style=${{ color: m.role === "user" ? "#7dd3fc" : "#5eead4" }}>${m.role === "user" ? "you" : "ML Engineer"}:</b>
+              <div style=${{ whiteSpace: "pre-wrap" }}>${m.content}</div></div>`)}
+          </div>
+          <div style=${{ display: "flex", gap: "8px" }}>
+            <input style=${inp} placeholder="message the agent…" value=${msg}
+                   oninput=${e => setMsg(e.target.value)}
+                   onkeydown=${e => { if (e.key === "Enter") send(); }} />
+            <button onClick=${send}>send</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>⚙️ Live loop feed (born → tested → gated → promoted)</h2>
+        <div class="body">
+          ${feed.length === 0 ? html`<span class="sub">Click "Run one loop step" to watch the agent work.</span>` : null}
+          ${feed.map((r,i) => html`<div class="buildrow" key=${i}>
+            <span style=${{ color: r.promoted ? "#34d399" : "#8aa0c8" }}>${r.promoted ? "✓" : "○"}</span>
+            <span>#${r.step} <b style=${{ color: color(r.feature && r.feature.includes("pathway") ? "decision" : "sequence") }}>${r.feature}</b>
+              [${r.mode}] — ${r.finding}</span></div>`)}
+        </div>
+      </div>
+    </div>`;
+}
+
 function App() {
   const [meta, setMeta] = useState({});       // node_type -> metadata
   const [nodes, setNodes] = useState([]);
@@ -615,7 +729,7 @@ function App() {
       <header>
         <h1>🧠 Pattern Brain</h1>
         <div class="tabs">
-          ${[["overview","Overview"],["bank","Model Bank"],["evaluator","Evaluator"],
+          ${[["overview","Overview"],["engineer","🤖 ML Engineer"],["bank","Model Bank"],["evaluator","Evaluator"],
              ["evolution","Evolution"],["pathways","Pathways"],["living","Living Graph"],
              ["adapter","Adapter"],["files","Files"]].map(([k,label]) => html`
             <button key=${k} class=${"tab" + (view===k ? " active" : "")}
@@ -630,6 +744,7 @@ function App() {
       </header>
 
       ${view === "overview" ? html`<${OverviewView} color=${color} setView=${setView} />`
+        : view === "engineer" ? html`<${EngineerView} color=${color} />`
         : view === "files" ? html`<${FilesView} />`
         : view === "evaluator" ? html`<${EvaluatorView} />`
         : view === "evolution" ? html`<${EvolutionView} color=${color} />`

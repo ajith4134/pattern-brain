@@ -10,3 +10,4 @@ knowledge_store/
 agent_state/
 *.sqlite
 *.npz
+.pw-browsers/

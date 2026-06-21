@@ -189,6 +189,34 @@ def test_adapter_endpoint():
           f"-> {d['trace']['output']['type']}")
 
 
+def test_knowledge_endpoint():
+    """ENG-4: /api/knowledge returns the book manifest + KB stats + LLM status."""
+    r = client.get("/api/knowledge")
+    check(r.status_code == 200, f"/api/knowledge status {r.status_code}")
+    d = r.json()
+    check(len(d["books"]) >= 6, "book manifest too small")
+    check("passages" in d["stats"] and "archival" in d["stats"], "kb stats missing keys")
+    check("chain" in d["llm"], "llm status missing chain")
+    print(f"  GET /api/knowledge -> {len(d['books'])} books, embedder={d['stats']['embedder']}")
+
+
+def test_agent_status_and_step_and_chat():
+    """ENG-4: agent status, one loop step (Observe→…→Rank), and a chat turn."""
+    s = client.get("/api/agent/status")
+    check(s.status_code == 200 and "steps_done" in s.json(), "agent status malformed")
+    st = client.post("/api/agent/step")
+    check(st.status_code == 200, f"/api/agent/step status {st.status_code}")
+    d = st.json()
+    check(d["result"]["feature"] in
+          ("feature1_model", "feature2_algorithm", "feature3_pathway"),
+          f"step feature bad: {d['result'].get('feature')}")
+    check(d["status"]["steps_done"] >= 1, "step did not advance the counter")
+    c = client.post("/api/agent/chat", json={"message": "what is the state of the bank?"})
+    check(c.status_code == 200 and isinstance(c.json()["reply"], str) and c.json()["reply"],
+          "agent chat returned no reply")
+    print(f"  POST /api/agent/step -> {d['result']['feature']}; chat reply ok")
+
+
 def test_ws_run_streams_start_hops_done():
     with client.websocket_connect("/ws/run") as ws:
         start = ws.receive_json()
@@ -225,6 +253,8 @@ def main():
     test_route_endpoint()
     test_conformance_endpoint()
     test_adapter_endpoint()
+    test_knowledge_endpoint()
+    test_agent_status_and_step_and_chat()
     test_ws_run_streams_start_hops_done()
     print("=" * 70)
     if FAILS:
