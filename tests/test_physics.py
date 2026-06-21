@@ -18,6 +18,9 @@ FAILS = []
 PHYSICS = ["esn_forecaster", "deterministic_esn_forecaster", "lyapunov_exponent",
            "recurrence_rate", "hurst_exponent", "sample_entropy",
            "permutation_entropy", "rmt_denoise"]
+PHYSICS2 = ["quantile_forecaster", "bayesian_ar_ensemble", "conformal_forecaster",
+            "bayesian_bootstrap", "hawkes_intensity", "mfdfa", "tsallis_entropy",
+            "phase_space_takens"]
 
 
 def check(cond, msg):
@@ -109,6 +112,43 @@ def test_lyapunov_flags_chaos():
     print(f"  lyapunov: chaotic LE={chaotic.payload['lyapunov']:.3f} > flat LE={flat.payload['lyapunov']:.3f}")
 
 
+def test_batch2_registered_and_conform():
+    rng = np.random.default_rng(11)
+    x = np.cumsum(rng.normal(size=300)).reshape(-1, 1)
+    for n in PHYSICS2:
+        check(n in all_node_types(), f"{n} not registered")
+        b = create(n).predict(x)
+        check(not validate_belief(b), f"{n} off-contract: {validate_belief(b)}")
+        check(np.isfinite(b.confidence), f"{n} non-finite conf")
+    print(f"  all {len(PHYSICS2)} batch-2 nodes registered, run, and conform")
+
+
+def test_distributional_forecasters_are_ordered():
+    rng = np.random.default_rng(13)
+    x = np.cumsum(rng.normal(size=300)).reshape(-1, 1)
+    q = create("quantile_forecaster").predict(x).payload["quantiles"]
+    check(q["q10"] <= q["q50"] <= q["q90"], f"quantiles unordered: {q}")
+    cf = create("conformal_forecaster").predict(x).payload
+    check(cf["lower"] <= cf["next_vector"][0] <= cf["upper"], "conformal interval doesn't bracket pred")
+    bb = create("bayesian_bootstrap").predict(x).payload
+    check(bb["ci_low"] <= bb["next_vector"][0] <= bb["ci_high"], "bootstrap CI doesn't bracket mean")
+    w = create("bayesian_ar_ensemble").predict(x).payload["posterior_weights"]
+    check(abs(sum(w) - 1.0) < 0.02, f"posterior weights don't sum to ~1 (rounded): {sum(w)}")
+    print("  distributional: quantiles ordered; conformal + bootstrap intervals bracket; BMA weights sum to 1")
+
+
+def test_hawkes_detects_clustering():
+    rng = np.random.default_rng(17)
+    smooth = np.cumsum(rng.normal(scale=0.2, size=400)).reshape(-1, 1)
+    bursty = rng.normal(scale=0.1, size=400)
+    bursty[50:55] += 8; bursty[200:206] += 8; bursty[330:333] += 8   # clustered shocks
+    bursty = np.cumsum(bursty).reshape(-1, 1)
+    f_smooth = create("hawkes_intensity").predict(smooth).payload["hawkes_fano"]
+    f_bursty = create("hawkes_intensity").predict(bursty).payload["hawkes_fano"]
+    check(f_bursty >= f_smooth, f"Hawkes Fano should flag clustering: bursty {f_bursty:.2f} vs smooth {f_smooth:.2f}")
+    print(f"  hawkes: clustered Fano={f_bursty:.2f} >= smooth Fano={f_smooth:.2f}")
+
+
 def test_domain_independence():
     import tokenize
     forbidden = ("candle", "ohlcv", "orderbook", "order_book")
@@ -133,6 +173,9 @@ def main():
     test_entropy_orders_regular_below_random()
     test_rmt_denoise_dims()
     test_lyapunov_flags_chaos()
+    test_batch2_registered_and_conform()
+    test_distributional_forecasters_are_ordered()
+    test_hawkes_detects_clustering()
     test_domain_independence()
     print("=" * 70)
     if FAILS:

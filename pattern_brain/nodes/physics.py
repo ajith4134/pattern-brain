@@ -303,3 +303,234 @@ class RMTDenoiseNode(Node):
                                    "n_signal_factors": int(mask.sum()),
                                    "lambda_plus": float(lam_plus), "residual": resid},
                       max(0.0, min(1.0, int(mask.sum()) / D)), self.name)
+
+
+# =====================================================================
+# Phase 7e — batch 2: the Galton-board / "magic of probability" family
+# (predict the DISTRIBUTION, not a point) + Hawkes + more fractal/chaos.
+# =====================================================================
+def _ar_fit_predict(x: np.ndarray, p: int):
+    """Fit AR(p) by least squares; return (one-step prediction, sse, n_obs)."""
+    n = len(x) - p
+    if n <= p + 1:
+        return float(x[-1]), float(np.var(x) * len(x) + 1e-9), max(1, n)
+    Xl = np.column_stack([x[p - 1 - k: p - 1 - k + n] for k in range(p)] + [np.ones(n)])
+    y = x[p:]
+    beta, *_ = np.linalg.lstsq(Xl, y, rcond=None)
+    sse = float(np.sum((y - Xl @ beta) ** 2))
+    last = np.concatenate([x[-1: -1 - p: -1], [1.0]])
+    return float(last @ beta), sse, n
+
+
+@register
+class QuantileForecasterNode(Node):
+    """Distributional forecast (the Galton-board idea: model the spread, not a
+    point). Emits the next-step median plus q10/q90 from the empirical distribution
+    of recent changes — a predictive interval instead of a single number."""
+    layer = "sequence"
+    node_type = "quantile_forecaster"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        x = X[:, 0].astype(float)
+        d = np.diff(x)
+        if len(d) < 10:
+            return Belief("forecast", {"next_vector": [float(x[-1])]}, 0.1, self.name)
+        q10, q50, q90 = np.percentile(d, [10, 50, 90])
+        last = float(x[-1])
+        pred = last + float(q50)
+        spread = float(q90 - q10) + 1e-9
+        conf = max(0.05, min(0.9, 1.0 / (1.0 + spread / (abs(np.std(d)) + 1e-9))))
+        return Belief("forecast", {"next_vector": [pred], "std": float(np.std(d)),
+                                   "quantiles": {"q10": last + float(q10), "q50": pred,
+                                                 "q90": last + float(q90)}}, conf, self.name)
+
+
+@register
+class BayesianARensembleNode(Node):
+    """Bayesian model averaging over AR(1..5): each order is a 'ball', weighted by
+    BIC; the posterior mean + variance ARE the Galton-board bell curve emerging from
+    many simple models (predict the aggregate distribution)."""
+    layer = "sequence"
+    node_type = "bayesian_ar_ensemble"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        x = X[:, 0].astype(float)
+        if len(x) < 12:
+            return Belief("forecast", {"next_vector": [float(x[-1])]}, 0.1, self.name)
+        preds, bics = [], []
+        for p in range(1, 6):
+            pred, sse, n = _ar_fit_predict(x, p)
+            preds.append(pred)
+            bics.append(n * np.log(sse / n + 1e-12) + p * np.log(n))   # lower = better
+        bics = np.array(bics)
+        w = np.exp(-0.5 * (bics - bics.min()))
+        w = w / w.sum()
+        preds = np.array(preds)
+        mean = float(w @ preds)
+        between = float(w @ (preds - mean) ** 2)               # model-disagreement var
+        return Belief("forecast", {"next_vector": [mean], "std": float(np.sqrt(between)),
+                                   "posterior_weights": w.round(3).tolist()},
+                      max(0.05, min(0.9, float(w.max()))), self.name)
+
+
+@register
+class ConformalForecasterNode(Node):
+    """Split-conformal prediction: a calibrated interval around an AR(1) base with a
+    finite-sample coverage guarantee (~90%). The rigorous form of 'how sure are we'."""
+    layer = "probability"
+    node_type = "conformal_forecaster"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        x = X[:, 0].astype(float)
+        n = len(x)
+        if n < 20:
+            return Belief("forecast", {"next_vector": [float(x[-1])]}, 0.1, self.name)
+        split = n // 2
+        # AR(1) fit on first half
+        a = np.polyfit(x[:split - 1], x[1:split], 1)
+        cal_pred = a[0] * x[split:-1] + a[1]
+        resid = np.abs(x[split + 1:] - cal_pred)
+        if resid.size < 3:
+            return Belief("forecast", {"next_vector": [float(x[-1])]}, 0.1, self.name)
+        qhat = float(np.quantile(resid, 0.9))
+        pred = float(a[0] * x[-1] + a[1])
+        conf = max(0.05, min(0.9, 1.0 / (1.0 + qhat / (np.std(x) + 1e-9))))
+        return Belief("forecast", {"next_vector": [pred], "lower": pred - qhat,
+                                   "upper": pred + qhat, "coverage": 0.9}, conf, self.name)
+
+
+@register
+class BayesianBootstrapNode(Node):
+    """Bayesian bootstrap predictive distribution: resample recent changes to get a
+    distribution over the next value (mean + 90% credible interval). Many random
+    draws -> a stable distribution (the bean-machine in estimator form)."""
+    layer = "probability"
+    node_type = "bayesian_bootstrap"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        x = X[:, 0].astype(float)
+        d = np.diff(x)
+        if len(d) < 8:
+            return Belief("forecast", {"next_vector": [float(x[-1])]}, 0.1, self.name)
+        rng = np.random.default_rng(0)
+        draws = float(x[-1]) + rng.choice(d, size=1000, replace=True)
+        lo, mean, hi = np.percentile(draws, 5), float(np.mean(draws)), np.percentile(draws, 95)
+        conf = max(0.05, min(0.9, 1.0 / (1.0 + (hi - lo) / (np.std(x) + 1e-9))))
+        return Belief("forecast", {"next_vector": [mean], "ci_low": float(lo),
+                                   "ci_high": float(hi), "std": float(np.std(draws))},
+                      conf, self.name)
+
+
+@register
+class HawkesIntensityNode(Node):
+    """Self-exciting point process (Hawkes) diagnostic: treat large moves as events
+    and measure clustering / self-excitation via the Fano factor (var/mean of event
+    counts). >1 => bursty self-exciting order-flow (rough-volatility microstructure)."""
+    layer = "signal"
+    node_type = "hawkes_intensity"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        x = X[:, 0].astype(float)
+        d = np.abs(np.diff(x))
+        events = (d > (np.mean(d) + 2 * np.std(d))).astype(float) if len(d) > 5 else np.zeros(1)
+        n_events = int(events.sum())
+        nbins = max(2, len(events) // 10)
+        counts = np.array([c.sum() for c in np.array_split(events, nbins)])
+        mean_c = float(counts.mean()) + 1e-9
+        fano = float(counts.var() / mean_c)                    # 1 = Poisson, >1 = clustered
+        branching = max(0.0, min(0.99, 1.0 - 1.0 / fano)) if fano > 1 else 0.0
+        return Belief("signal", {"hawkes_fano": fano, "branching_ratio": branching,
+                                 "n_events": n_events, "series": x.tolist()},
+                      max(0.0, min(1.0, branching)), self.name)
+
+
+def _dfa_hurst(x: np.ndarray, q: float, scales) -> float:
+    """Generalized Hurst exponent at moment q via DFA (for MFDFA)."""
+    y = np.cumsum(x - x.mean())
+    Fq = []
+    for s in scales:
+        segs = len(y) // s
+        if segs < 1:
+            continue
+        rms = []
+        for v in range(segs):
+            seg = y[v * s:(v + 1) * s]
+            t = np.arange(s)
+            coef = np.polyfit(t, seg, 1)
+            rms.append(np.mean((seg - np.polyval(coef, t)) ** 2))
+        rms = np.array(rms)
+        if q == 0:
+            Fq.append(np.exp(0.5 * np.mean(np.log(rms + 1e-12))))
+        else:
+            Fq.append(np.mean(rms ** (q / 2.0)) ** (1.0 / q))
+    if len(Fq) < 2:
+        return 0.5
+    ls = np.log(np.array(scales[: len(Fq)]))
+    return float(np.polyfit(ls, np.log(np.array(Fq) + 1e-12), 1)[0])
+
+
+@register
+class MFDFANode(Node):
+    """Multifractal Detrended Fluctuation Analysis: multifractal width = H(q-) - H(q+).
+    Wide => rich multifractal structure (turbulent/intermittent); narrow => monofractal."""
+    layer = "signal"
+    node_type = "mfdfa"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        x = X[:, 0].astype(float)
+        width, h2 = 0.0, 0.5
+        if len(x) >= 64:
+            scales = [s for s in (8, 16, 32, 64) if s <= len(x) // 2]
+            if len(scales) >= 2:
+                h_neg, h_pos = _dfa_hurst(x, -2, scales), _dfa_hurst(x, 2, scales)
+                h2 = h_pos
+                width = abs(h_neg - h_pos)
+        return Belief("signal", {"multifractal_width": float(width),
+                                 "generalized_hurst_q2": float(h2), "series": x.tolist()},
+                      max(0.0, min(1.0, float(width))), self.name)
+
+
+@register
+class TsallisEntropyNode(Node):
+    """Tsallis (non-extensive) entropy — sensitive to fat tails / rare large moves
+    (q>1 weights frequent states; the econophysics tool for heavy-tailed markets)."""
+    layer = "signal"
+    node_type = "tsallis_entropy"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        x = X[:, 0].astype(float)
+        q = 2.0
+        d = np.diff(x) if len(x) > 1 else x
+        hist, _ = np.histogram(d, bins=min(20, max(3, len(d) // 5)), density=False)
+        p = hist / (hist.sum() + 1e-12)
+        p = p[p > 0]
+        sq = float((1.0 - np.sum(p ** q)) / (q - 1.0)) if len(p) else 0.0
+        return Belief("signal", {"tsallis_entropy": sq, "q": q, "series": x.tolist()},
+                      max(0.0, min(1.0, sq)), self.name)
+
+
+@register
+class PhaseSpaceTakensNode(Node):
+    """Takens delay-embedding diagnostic: estimates the correlation dimension
+    (Grassberger-Procaccia) — low integer-ish => low-dimensional deterministic
+    dynamics; high => stochastic/high-dimensional. The 'hidden structure' probe."""
+    layer = "signal"
+    node_type = "phase_space_takens"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        x = X[:, 0].astype(float)
+        m, tau = 3, 1
+        emb = _delay_embed(x, m, tau)
+        corr_dim = 0.0
+        if len(emb) > 20:
+            from scipy.spatial.distance import pdist
+            dists = pdist(emb)
+            if dists.size:
+                rs = np.percentile(dists[dists > 0], [10, 30, 50, 70])
+                cr = [(np.mean(dists < r) + 1e-12) for r in rs]
+                lr, lc = np.log(rs + 1e-12), np.log(cr)
+                if np.all(np.isfinite(lc)):
+                    corr_dim = float(np.polyfit(lr, lc, 1)[0])
+        return Belief("signal", {"correlation_dimension": corr_dim, "embedding_dim": m,
+                                 "series": x.tolist()},
+                      max(0.0, min(1.0, corr_dim / m)), self.name)
