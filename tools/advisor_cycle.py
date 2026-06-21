@@ -11,6 +11,7 @@ Run manually:  set -a; . .env; set +a; python3 tools/advisor_cycle.py [N]
 from __future__ import annotations
 
 import os
+import re
 import sys
 import time
 
@@ -40,6 +41,16 @@ def _safe(fn, **kw):
         fn(**kw)
     except Exception:
         pass
+
+
+def _existing_titles() -> set:
+    """Titles already proposed in PLAN.md (dedupe guard: daily runs in a fresh
+    cloud checkout have no ideas.json memory, so they'd otherwise re-propose)."""
+    plan = os.path.join(PROJECT_ROOT, "PLAN.md")
+    if not os.path.exists(plan):
+        return set()
+    body = open(plan, encoding="utf-8").read()
+    return {m.strip().lower() for m in re.findall(r"🟡 \*\*(.+?)\*\*", body)}
 
 
 def append_to_plan(ideas) -> None:
@@ -72,9 +83,15 @@ def main() -> None:
     t = threading.Thread(target=lambda: _safe(box.knowledge.ingest_manifest, max_chars=30000),
                          daemon=True)
     t.start(); t.join(25)
-    ideas = adv.generate(n=n)
+    # generate a few extra, then drop any already proposed in PLAN.md (dedupe guard)
+    seen = _existing_titles()
+    ideas = [i for i in adv.generate(n=n + 3) if i.title.lower() not in seen][:n]
+    if not ideas:
+        print(f"[advisor_cycle] backend={backend or 'offline'} — no NEW proposals "
+              f"(all candidates already in PLAN.md). Nothing appended.")
+        return
     append_to_plan(ideas)
-    print(f"[advisor_cycle] backend={backend or 'offline'} — appended {len(ideas)} 🟡 proposals to PLAN.md:")
+    print(f"[advisor_cycle] backend={backend or 'offline'} — appended {len(ideas)} NEW 🟡 proposals to PLAN.md:")
     for i in ideas:
         print(f"  - {i.title}  (elo {i.elo:.0f}, feas {i.feasibility:.2f}, nov {i.novelty:.2f})")
     print("[advisor_cycle] NOTHING decided or built — review in PLAN.md / the dashboard Advisor panel.")
