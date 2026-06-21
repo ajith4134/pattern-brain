@@ -1223,3 +1223,43 @@ Owner pasted 8 cloud API keys and asked to test each + install Ollama locally in
 
 ### Addendum 5 — verification audit found + fixed a real gap: the agent now AUTO-ingests the books (2026-06-21)
 Owner asked to re-check that the whole original message was implemented. Audit (all suites green, all files present, book-ingest pipeline live-proven: 7/8 books → 30 passages) surfaced **one genuine gap (Rule 18):** `ingest_books` existed as a tool but **nothing called it** — the agent didn't *itself* "come up with all the books and convert them into a vector DB"; the KB started empty until manually triggered. **Fixed:** `MLEngineerAgent.ensure_books()` fires once, in a background thread (non-blocking, best-effort), at the first `step()`/`chat()`; `ingest_books()` is the synchronous form; the dashboard agent calls `ensure_books()` on creation and a new `POST /api/agent/ingest_books` + an "📥 Ingest books → vector DB now" button let the owner trigger/re-run it. Offline tests pass `auto_ingest_books=False`; a new `test_auto_ingest_books` proves (via an injected fetcher) the agent converts the book corpus into the vector DB and can retrieve from it. All suites green. **Now every one of the seven asks is not just present but actually exercised by the agent on its own.**
+
+## BLOCK 57 — Owner's two-part "all ML models + computational brain" message; read-compare-search before pausing (2026-06-21)
+
+Owner asked to PAUSE, but first: read every word, compare to what we built, search online, capture + propose (no building now). Two message parts:
+- **Part A** — a ~15-family taxonomy of "every ML model ever created" for pattern-finding / sequence prediction / probability / noise / equation discovery / generation (Pattern Mining, Markov/HMM/CRF, Bayesian/Kalman/Particle, ARIMA/GARCH/Prophet, RNN/LSTM/GRU, Transformers/PatchTST/Chronos, SSM/Mamba, clustering, anomaly, representation, GNN, RL, symbolic/SINDy/PySR, information theory, generative/GAN/diffusion) + an explicit request to add a **physics/PhD tier** (chaos prediction, "converting randomness into patterns", Galton-board/magic-of-probability-inspired models) and reach **~500–1000 ML models as nodes**.
+- **Part B** — the "models as electronic components → Connector Intelligence → Architecture Search → Evolution Engine → Memory" 5-layer brain framing, ending with the key insight: *"the interesting part is NOT adding more models… the hard research problem is the connector intelligence."*
+
+### Finding 1 (Rule 14) — Part B's "computational brain" vision IS already Pattern Brain's architecture
+A near 1:1 map — this is confirmation, not new scope:
+| Owner's layer (Part B) | Already built in Pattern Brain |
+|---|---|
+| L1 Primitive Intelligence Units ("transistors") | The model bank — **123 nodes across the 8 functional layers** (signal/noise/pattern/sequence/probability/equation/decision/rl), every one behind the generic `Node` interface (Rule 23). His Pattern/Sequence/Probability/Noise/Equation/Optimization unit groups = our layers. |
+| L2 Connector Intelligence (learnable routing graph) | `connector.py` (v0 fixed pathway) + `routing.py` (v1 dynamic LLM/heuristic router) + `reputation.py` (`ReputationRouter` — routes by learned edge reputation; "the graph is the memory", Block 17). |
+| L3 Architecture Search (score many graphs on profit/Sharpe/DD…) | `PathwayEvolver` (Feature 3) + the 5-layer `Evaluator` (NSGA-II Pareto over profit/Sharpe/DD/stability + CSCV/PBO). |
+| L4 Evolution Engine (crossover/mutate architectures like DNA) | Features 1/2/3 GA loop (`evolution.py`) — exactly genetic programming + neuroevolution over params/algorithms/pathways. |
+| L5 Memory (which architecture worked in which regime) | `knowledge.py` vector DB (RAG + Letta archival) + `PathwayReputation` regime-conditioned stats + the World-Model/regime concept. |
+Owner's own conclusion ("the hard problem is the connector, not more models") is **the exact thesis the plan already records** (Blocks 7/16/17/18 independently converged on it). So Part B = ✅ already designed + built; nothing to add architecturally.
+
+### Finding 2 (Rule 14) — Part A gap analysis: ~15 families vs the current 123-node bank
+Covered / partial / missing as *built nodes* (catalog coverage in PLAN §5 is broader):
+- ✅ **Strong/complete:** clustering (8+ incl. HDBSCAN/DBSCAN/GMM/spectral/meanshift), anomaly-noise (isolation_forest/one-class-svm/LOF/robust-ish PCA + AE/VAE w/ torch), classical regression/"equation" family (14), classifiers/decision (20), bandits/RL-lite (9), signal/DSP (17 incl. FFT/Hilbert/Welch/wavelython-substitutes).
+- 🟡 **Partial:** sequence — have AR, markov_chain, gaussian_hmm, theta, Holt, ML-AR forecasters, + (torch) LSTM/GRU/Transformer/TCN/SSM-lite; probability — gaussian_process/kalman/particle/bayesian_ridge/gaussian_nb; symbolic — symbolic_regression + AlgorithmEvolver (GP); representation — deep/variational autoencoders; graph — gcn_denoise; generative — VAE.
+- ❌ **Missing entirely (the real expansion targets):** **Pattern Mining** (Apriori/FP-Growth/ECLAT/PrefixSpan/SPADE/GSP) — whole family absent; **classical econometrics** (MA/ARMA/ARIMA/SARIMA/VAR/GARCH/EGARCH/Prophet/N-BEATS/TFT); **CRF / semi-Markov / hierarchical-HMM / higher-order Markov**; **Bayesian Networks / Dynamic Bayesian Networks**; **deep RL** (DQN/PPO/SAC/TD3/A3C); **advanced transformers** (PatchTST/Informer/Autoformer/FEDformer + foundation models TimeGPT/Chronos); **real Mamba/S4/S5**; **GNN variants** (GraphSAGE/GAT/Temporal-GNN); **generative** (GAN/Diffusion/Normalizing Flows); **information-theory nodes** (Mutual Information/Transfer Entropy/Kolmogorov/MDL); **proper SINDy/PySR/AI-Feynman**.
+
+### Finding 3 — the physics/PhD tier owner wants (already in PLAN §5 cats 21–31; grounded by today's search)
+These are documented in the plan's catalog but **not yet built as nodes** — the highest-novelty additions:
+- **Reservoir Computing / Echo State Networks** — today's search confirms RC/ESN is the go-to for *chaotic* time-series + Lyapunov-exponent estimation from data; 2025 *deterministic* RC (TCRC, Logistic/Chebyshev maps, Lobachevsky activation) beats classical ESN and is low-resource — ideal "convert randomness/chaos into prediction" node. (arxiv 2501.15615; Nature Sci.Rep. 2025; AIP Chaos 27:121102.)
+- **Chaos/nonlinear-dynamics**: Lyapunov exponent, phase-space (Takens) reconstruction, Recurrence Quantification Analysis — chaos-vs-noise indicators.
+- **Econophysics**: Random Matrix Theory (Marchenko-Pastur correlation cleaning), **Hawkes processes** (order-flow clustering; quadratic-Hawkes → rough-volatility + Zumbach effect, arxiv 1907.06151/2206.10419), Agent-Based Models, Self-Organized Criticality, Tsallis entropy.
+- **Rough volatility / fractional calculus**: rough Heston / fractional Brownian motion (volatility-is-rough).
+- **Energy-Based / statistical-mechanics**: Hopfield networks (Ising lineage; = modern attention), Boltzmann/RBM, **Diffusion models** (nonequilibrium thermodynamics), Simulated Annealing.
+- **Topological Data Analysis** (persistent homology — real crash early-warning hits), **Fractal/Multifractal** (Hurst, MFDFA), **PINN/Neural-ODE/DeepONet/FNO**, **Quantum/quantum-inspired** (QAOA/annealing).
+- **"Magic of probability / Galton-board"-inspired**: the bean-machine = CLT (binomial→normal); the node-family it inspires = **distributional / quantile forecasters + Bayesian ensemble aggregation** (predict the *distribution*, not the point) — plus the live Galton dashboard demo already shipped.
+
+### Conclusion (Rule 10) + what's proposed for next session (approval-gated; NOT built — owner paused)
+We are **~123 of the ~500 target nodes**. The architecture (Part B) is done; the work is **breadth of L1 units** (Part A + physics tier). Proposed **Phase 7 — "Bank → ~500 nodes"**, in batches, each behind the `Node` interface, light-stack-first then torch, interlingua-conformant, shadow-first (added to PLAN tracker as 🟡). This is the natural continuation point when we resume.
+
+**Sources:** arxiv.org/abs/2501.15615 (deterministic RC), nature.com/articles/s41598-025-98172-z, pubs.aip.org AIP Chaos 27:121102 (Lyapunov-from-data), arxiv.org/abs/1907.06151 + 2206.10419 (quadratic Hawkes → rough vol), researchgate "Volatility is rough". Earlier PLAN §5 cats 21–31 already cite the econophysics/energy-based/TDA/quantum literature.
+
+Rules applied: 1, 2, 4, 5, 9, 10, 11, 13, 14, 16, 20, 21, 24.
