@@ -61,10 +61,14 @@ def test_availability_and_auto_graceful():
         check(name is None and pb.default_llm_router() is None,
               "no backend -> default_llm_router must be None (heuristic fallback)")
     else:
-        check(name in ("ollama", "anthropic"), f"unexpected backend {name}")
+        check(name in llm.ALL_BACKENDS, f"unexpected backend {name}")
     status = llm.llm_backend_status()
-    check("router" in status and "active_backend" in status, "status missing keys")
-    print(f"  availability: ollama={o} anthropic={a} -> backend={name or 'heuristic'}")
+    check("router" in status and "active_backend" in status and "cloud_available" in status,
+          "status missing keys")
+    check(isinstance(status["chain"], list) and "ollama" in status["chain"],
+          "status chain malformed")
+    print(f"  availability: ollama={o} anthropic={a} cloud={status['cloud_available']} "
+          f"-> backend={name or 'heuristic'}")
 
 
 def test_llmrouter_loop_with_fake_backend():
@@ -101,6 +105,56 @@ def test_tool_schema_conversion():
     print("  schema: generic tool specs convert to anthropic + ollama formats")
 
 
+def test_parse_openai():
+    resp = {"choices": [{"message": {"tool_calls": [{"function": {"name": "kalman_filter"}}]}}]}
+    check(llm.parse_openai_response(resp)["name"] == "kalman_filter", "openai tool parse failed")
+    check(llm.parse_openai_response({"choices": [{"message": {}}]})["name"] == "stop",
+          "no tool_call should map to stop")
+    txt = {"choices": [{"message": {"content": "hello"}}]}
+    check(llm.parse_openai_text(txt) == "hello", "openai text parse failed")
+    check(llm.parse_openai_text({"choices": []}) == "", "empty choices -> empty text")
+    print("  parse: openai tool_call + text extracted; no-tool -> stop")
+
+
+def test_cloud_chain_selection_and_cooldown():
+    """With a cloud key set, the cloud-primary chain selects that provider over
+    ollama/anthropic; cooldown removes it from availability. No network calls."""
+    prov = llm.CLOUD_PROVIDERS[0]["name"]          # zai = highest priority
+    env = llm.CLOUD_PROVIDERS[0]["env"]
+    had = os.environ.get(env)
+    os.environ[env] = "test-key-not-real"
+    llm._PROVIDER_COOLDOWN.clear()
+    try:
+        avail = [p["name"] for p in llm.available_cloud_providers()]
+        check(prov in avail, f"{prov} should be available with key set")
+        _, name = llm.auto_completer()
+        check(name == prov, f"cloud-primary chain should pick {prov}, got {name}")
+        # cooldown removes it
+        llm._trip_cooldown(prov)
+        check(prov not in [p["name"] for p in llm.available_cloud_providers()],
+              "cooldown should remove provider from availability")
+    finally:
+        llm._PROVIDER_COOLDOWN.clear()
+        if had is None:
+            os.environ.pop(env, None)
+        else:
+            os.environ[env] = had
+    print(f"  cloud: {prov} selected by chain when keyed; cooldown removes it")
+
+
+def test_openai_completer_builds_and_parses_offline():
+    """openai_compatible_completer + _chat are constructible without network and
+    convert tools to the OpenAI schema (the POST is only made when called)."""
+    comp = llm.openai_compatible_completer("https://example.invalid/v1", "m", "k", name="x")
+    chat = llm.openai_compatible_chat("https://example.invalid/v1", "m", "k", name="x")
+    check(callable(comp) and callable(chat), "completer/chat not callable")
+    olla = llm._to_openai_tools([{"name": "n", "description": "d",
+                                  "input_schema": {"type": "object", "properties": {}}}])
+    check(olla[0]["type"] == "function" and olla[0]["function"]["name"] == "n",
+          "openai tool schema malformed")
+    print("  cloud: openai completer/chat construct offline; tool schema ok")
+
+
 def test_domain_independence():
     import tokenize
     forbidden = ("candle", "ohlcv", "orderbook", "order_book")
@@ -121,7 +175,10 @@ def main():
     print("=" * 70)
     test_parse_anthropic()
     test_parse_ollama()
+    test_parse_openai()
     test_availability_and_auto_graceful()
+    test_cloud_chain_selection_and_cooldown()
+    test_openai_completer_builds_and_parses_offline()
     test_llmrouter_loop_with_fake_backend()
     test_tool_schema_conversion()
     test_domain_independence()

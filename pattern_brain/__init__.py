@@ -42,9 +42,12 @@ from .reputation import (
     PathwayReputation, PathwayStat, ReputationRouter,
 )
 from .llm import (
-    auto_completer, default_llm_router, llm_backend_status,
+    auto_completer, auto_text_completer, default_llm_router, llm_backend_status,
     ollama_completer, anthropic_completer, ollama_available, anthropic_available,
-    parse_anthropic_response, parse_ollama_response,
+    parse_anthropic_response, parse_ollama_response, parse_openai_response,
+    parse_openai_text, openai_compatible_completer, openai_compatible_chat,
+    available_cloud_providers, CLOUD_PROVIDERS, ALL_BACKENDS,
+    ollama_chat, anthropic_chat,
 )
 
 __all__ = [
@@ -68,7 +71,10 @@ __all__ = [
     "Evolver", "ModelEvolver", "PathwayEvolver", "AlgorithmEvolver",
     "Individual", "EvolutionResult", "directional_candidate_fn",
     "PathwayReputation", "PathwayStat", "ReputationRouter",
-    "auto_completer", "default_llm_router", "llm_backend_status",
+    "auto_completer", "auto_text_completer", "default_llm_router", "llm_backend_status",
     "ollama_completer", "anthropic_completer", "ollama_available", "anthropic_available",
-    "parse_anthropic_response", "parse_ollama_response",
+    "parse_anthropic_response", "parse_ollama_response", "parse_openai_response",
+    "parse_openai_text", "openai_compatible_completer", "openai_compatible_chat",
+    "available_cloud_providers", "CLOUD_PROVIDERS", "ALL_BACKENDS",
+    "ollama_chat", "anthropic_chat",
 ]
