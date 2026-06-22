@@ -16,3 +16,4 @@ from . import patternmining # noqa: F401  (Phase 7b: frequent + sequential patte
 from . import probabilistic # noqa: F401  (Phase 7c: higher-order/semi-Markov, HHMM, CRF, Bayes nets)
 from . import infotheory    # noqa: F401  (Phase 7d: MI, transfer entropy, Kolmogorov/MDL, cross/cond entropy)
 from . import deep         # noqa: F401  (deep/PyTorch nodes — only register if torch is installed)
+from . import decomposition # noqa: F401  (PLAN §17.6: Wavelet/SSA/EMD decomposition + optional PySR)

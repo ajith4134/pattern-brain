@@ -1,0 +1,7 @@
+# Optional richer backends for the decomposition nodes (PLAN §17.6).
+# NONE of these are required: ssa_decompose + emd_decompose use only numpy/scipy
+# (already core deps), and wavelet_decompose has a dependency-free Haar fallback.
+# Install these only to upgrade the backends:
+PyWavelets        # wavelet_decompose -> richer wavelet families (db4, sym, coif) instead of Haar
+EMD-signal        # (optional) reference EMD/EEMD implementation
+# pysr            # PySR symbolic regression — heavy (pulls in Julia); enables the pysr_symbolic node

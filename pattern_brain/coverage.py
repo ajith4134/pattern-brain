@@ -66,6 +66,9 @@ CATALOG: List[Tuple[str, List[Tuple[str, List[str]]]]] = [
         ("Symbolic regression", ["symbolic_regression"]), ("Genetic programming", ["genetic"]),
         ("PySR", ["pysr"]), ("AI Feynman", ["feynman"]), ("SINDy", ["sindy"]),
         ("Regression laws", ["linear_regression", "ridge_regression", "lasso"])]),
+    ("Signal decomposition", [
+        ("Wavelet (DWT)", ["wavelet"]), ("SSA", ["ssa_decompose", "ssa_"]),
+        ("EMD", ["emd_decompose", "emd_"]), ("Fourier (FFT/Welch)", ["fft", "welch_psd", "periodogram"])]),
     ("Information theory", [
         ("Spectral entropy", ["spectral_entropy"]), ("Sample entropy", ["sample_entropy"]),
         ("Permutation entropy", ["permutation_entropy"]), ("Tsallis entropy", ["tsallis"]),

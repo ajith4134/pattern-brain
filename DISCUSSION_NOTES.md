@@ -1583,3 +1583,23 @@ Did a genuine line-by-line re-scan of the 3-message chat vs PLAN §17 (not a rub
 Pushed. Honest: the first §17 pass captured all major architecture; this pass added concrete bank gaps (Wavelet/SSA/EMD/PySR), the no-GPU/12-core/33GiB sizing reality, and sharpened the LLM-converter + data-type-gate nuances.
 
 Rules applied: 1, 2, 4, 5, 7, 10, 14, 16, 20, 21, 23, 24, 26.
+
+## 2026-06-22 — Item 1 DONE: decomposition nodes (Wavelet/SSA/EMD/PySR) — warm-up before W1
+
+Owner approved doing items 1→2→3 in order. Item 1 = the 4 decomposition nodes that fill the §17.6(a) named-model gaps.
+
+Built pattern_brain/nodes/decomposition.py (4 nodes, all behind the generic Node interface, Rule 23):
+- ssa_decompose — Singular Spectrum Analysis: trajectory-matrix SVD + diagonal averaging (Hankelization), top-r reconstruction. PURE NUMPY, always registers.
+- wavelet_decompose — multi-level DWT + soft-threshold (MAD sigma, universal threshold) denoise. PyWavelets(db4) if installed, else a dependency-free Haar fallback → ALWAYS registers.
+- emd_decompose — Empirical Mode Decomposition via cubic-spline envelope sifting (scipy.interpolate, already a dep) into IMFs + residual trend; transform drops the noisiest IMF. Always registers.
+- pysr_symbolic — PySR (Julia) symbolic regression, OPTIONAL-guarded like torch nodes; absent here (no Julia) so doesn't register — code path complete for when installed. (Capability already exists via symbolic_regression/sindy.)
+
+Dep choice rationale: 3 of 4 need NO new dependency (SSA=numpy, EMD=scipy, Wavelet=Haar fallback) so they're testable on this box right now; only PySR is heavy/optional. Bank 161→164 light / 196→199 torch.
+
+Conformance: all 3 emit 'signal' (required key 'series') — no interlingua catalog change. Added "Signal decomposition" coverage family (Wavelet/SSA/EMD/Fourier = 4/4 built).
+
+Evidence (Rule 25/19, verified live): tests/test_decomposition.py green (registration matches PYSR_AVAILABLE; transformer finite (T,D) incl D=3; conformant beliefs; T=5 robustness; behavioral denoise check — reconstructions track the true clean signal better-or-equal vs raw noisy). No regressions: test_bank.py, test_interlingua.py, test_dashboard.py all green. requirements-decomp.txt documents optional richer backends.
+
+Honest: pysr_symbolic untestable here (no Julia). NEXT (item 2): W1 (Hyperband/ASHA smart search) + W3 (genome metadata + type-directed composition) — Phase A.
+
+Rules applied: 1, 2, 4, 5, 7, 10, 14, 16, 19, 20, 21, 22, 23, 24, 25, 26.
