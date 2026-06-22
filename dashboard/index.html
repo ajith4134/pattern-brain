@@ -852,10 +852,12 @@ function EngineerView({ color }) {
   const [actBusy, setActBusy] = useState(false);
   const [ideas, setIdeas] = useState([]);
   const [genBusy, setGenBusy] = useState(false);
+  const [compute, setCompute] = useState(null);
   const refresh = useCallback(() => {
     fetch("/api/knowledge").then(r => r.json()).then(setKn);
     fetch("/api/agent/status").then(r => r.json()).then(setStatus);
     fetch("/api/advisor/ideas").then(r => r.json()).then(d => setIdeas(d.ideas || []));
+    fetch("/api/compute").then(r => r.json()).then(setCompute).catch(() => {});
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
   const genIdeas = async () => {
@@ -892,15 +894,28 @@ function EngineerView({ color }) {
       setChat(c => [...c, { role: "assistant", content: "⚠ request failed: " + e }]);
     } finally { setChatBusy(false); }
   };
+  const [runStatus, setRunStatus] = useState("");
   const confirmAct = async (approve) => {
     if (!pending) return;
-    setActBusy(true);
+    const id = pending.id; setPending(null); setActBusy(true);
     try {
       const r = await fetch("/api/agent/confirm", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: pending.id, approve }) }).then(x => x.json());
-      setChat(c => [...c, { role: "assistant", content: r.reply }]);
-      setPending(null);
+        body: JSON.stringify({ id, approve }) }).then(x => x.json());
+      if (r.async && r.job_id) {                          // idea 1: poll the background job
+        let res = null;
+        while (true) {
+          await new Promise(s => setTimeout(s, 1500));
+          const j = await fetch("/api/agent/job/" + r.job_id).then(x => x.json());
+          if (j.status === "running") { setRunStatus(`⚙ running… ${j.elapsed||0}s (${r.desc||"run"})`); continue; }
+          res = j.status === "done" ? j.result : { reply: "⚠ run failed: " + (j.error || j.status) };
+          break;
+        }
+        setRunStatus("");
+        setChat(c => [...c, { role: "assistant", content: (res && res.reply) || "(done)" }]);
+      } else {
+        setChat(c => [...c, { role: "assistant", content: r.reply }]);
+      }
       refresh();
     } finally { setActBusy(false); }
   };
@@ -928,6 +943,20 @@ function EngineerView({ color }) {
         <div style=${{ marginTop: "8px" }}>
           <button onClick=${runStep} disabled=${busy}>${busy ? "running…" : "▶ Run one loop step"}</button>
           <button onClick=${refresh} style=${{ marginLeft: "8px" }}>↻ refresh</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>⚙️ Adaptive Compute Manager (W2 — the "Intelligence Switch")</h2>
+        <div class="body">
+          ${compute ? html`
+            <div class="kv"><span>CPU cores</span><span>${compute.cores}</span></div>
+            <div class="kv"><span>worker budget</span><span>${compute.workers} (CPU≤${Math.round(compute.max_cpu_frac*100)}% · RAM≤${Math.round(compute.max_ram_frac*100)}%)</span></div>
+            ${compute.psutil ? html`<div class="kv"><span>live CPU</span><span>${(compute.cpu_percent??0).toFixed(0)}%</span></div>
+              <div class="kv"><span>live RAM</span><span>${(compute.ram_percent??0).toFixed(0)}% (${compute.ram_available_mb} MB free)</span></div>` : html`<div class="sub">psutil not present — worker budget from core count only</div>`}
+            <div class="kv"><span>GPU</span><span>${compute.gpu ? "yes" : "none (CPU-only box)"}</span></div>
+            <div class="hint">Parallelizes the W1 Hyperband screening rungs across cores, capped to avoid swap. Searches run as background jobs (poll-based), so the chat never blocks.</div>
+          ` : html`<span class="sub">loading…</span>`}
         </div>
       </div>
 
@@ -984,6 +1013,7 @@ function EngineerView({ color }) {
             <button onClick=${() => confirmAct(false)} disabled=${actBusy} style=${{ marginLeft: "6px" }}>✕ Cancel</button>
           </div>` : null}
           ${chatBusy ? html`<div class="sub" style=${{ margin: "4px 0", color: "#5eead4" }}>🤔 thinking… (reading state / calling the model)</div>` : null}
+          ${runStatus ? html`<div class="sub" style=${{ margin: "4px 0", color: "#fcd34d" }}>${runStatus}</div>` : null}
           <div style=${{ display: "flex", gap: "8px" }}>
             <input style=${{ ...inp, opacity: chatBusy ? 0.6 : 1 }} disabled=${chatBusy}
                    placeholder=${'message the agent… (try "run a DAG search on BTC/USD")'} value=${msg}

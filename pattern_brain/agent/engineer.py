@@ -462,7 +462,8 @@ class MLEngineerAgent:
     def _describe_write(name: str, a: Dict[str, Any]) -> str:
         if name == "run_dag_search":
             return (f"Hyperband DAG search on {a['symbol']} {a['timeframe']} "
-                    f"(~{max(9, a['rounds'] * a['n_per_round'] * 3)} candidates screened, {a['limit']} candles)")
+                    f"(~{min(9, max(9, a['rounds'] * a['n_per_round']))} candidates screened, "
+                    f"{a['limit']} candles, parallelized)")
         return f"freeze→forward-test capstone on {a['symbol']} {a['timeframe']} ({a['limit']} candles)"
 
     @staticmethod
@@ -502,10 +503,12 @@ class MLEngineerAgent:
         # autonomous loop / the future W2 compute manager + parallelism.)
         max_configs = min(9, max(self._WRITE_MIN_CONFIGS, int(rounds) * int(n_per_round)))
         try:
+            from ..compute import ComputeManager
             search = DAGSearch(d["matrix"], leaderboard=lb, dataset_id=symbol,
                                max_base=3, min_train=40, n_samples=30, seed=0)
             report = search.hyperband_search(max_configs=max_configs, eta=3, n_brackets=1,
-                                             rungs=[(20, 10), (45, 20), (80, 30)])
+                                             rungs=[(20, 10), (45, 20), (80, 30)],
+                                             compute=ComputeManager())   # W2: parallel screening
             best = report.get("best")
         finally:
             lb.close()

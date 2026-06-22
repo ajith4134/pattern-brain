@@ -658,19 +658,81 @@ async def agent_chat(request: Request) -> JSONResponse:
     return JSONResponse({"reply": reply, "pending": a.pending_action()})
 
 
+# --------------------------------- async job registry (idea 1: non-blocking runs)
+import time as _time
+import uuid as _uuid
+_JOBS: dict = {}
+_JOBS_LOCK = threading.Lock()
+_JOBS_MAX = 50
+
+
+def _start_job(fn) -> str:
+    """Run a blocking ``fn`` in a daemon thread; track status/result by job id so
+    the UI can poll instead of waiting on one long request (idea 1)."""
+    jid = _uuid.uuid4().hex[:12]
+    with _JOBS_LOCK:
+        if len(_JOBS) >= _JOBS_MAX:                       # drop oldest finished jobs
+            for k in [k for k, v in sorted(_JOBS.items(), key=lambda kv: kv[1].get("started", 0))
+                      if v.get("status") != "running"][:10]:
+                _JOBS.pop(k, None)
+        _JOBS[jid] = {"status": "running", "started": _time.time(), "result": None}
+
+    def _work():
+        try:
+            res = fn()
+            with _JOBS_LOCK:
+                _JOBS[jid].update(status="done", result=res, ended=_time.time())
+        except Exception as e:                            # surface failures to the poller
+            with _JOBS_LOCK:
+                _JOBS[jid].update(status="error", error=str(e), ended=_time.time())
+    threading.Thread(target=_work, daemon=True).start()
+    return jid
+
+
+@app.get("/api/agent/job/{jid}")
+def agent_job(jid: str) -> JSONResponse:
+    """Poll a background job's status/result (idea 1)."""
+    with _JOBS_LOCK:
+        j = _JOBS.get(jid)
+        if j is None:
+            return JSONResponse({"status": "unknown"}, status_code=404)
+        out = {"status": j["status"],
+               "elapsed": round((j.get("ended") or _time.time()) - j["started"], 1)}
+        if j["status"] == "done":
+            out["result"] = j["result"]
+        elif j["status"] == "error":
+            out["error"] = j.get("error")
+    return JSONResponse(out)
+
+
 @app.post("/api/agent/confirm")
 async def agent_confirm(request: Request) -> JSONResponse:
-    """Confirm (or cancel) a staged write action — the single guarded boundary that
-    lets the chat trigger a real run (DAG search / capstone), idea 2."""
+    """Confirm (or cancel) a staged write action (idea 2). A real RUN is dispatched
+    as a BACKGROUND JOB (idea 1) — the endpoint returns a ``job_id`` immediately and
+    the UI polls ``/api/agent/job/<id>`` for progress, so the chat never blocks on a
+    multi-second compute. Cancels / no-op confirms return instantly."""
     body = await request.json()
+    aid = (body or {}).get("id", "")
+    approve = bool((body or {}).get("approve", True))
     a = _agent()
+    pa = a.pending_action()
+    if not approve or pa is None or pa.get("id") != aid:     # instant: no heavy compute
+        return JSONResponse({**a.confirm_action(aid, approve=approve), "async": False})
 
-    def _run():                                          # blocking compute (capstone/DAG search)
-        with _RUN_LOCK:                                  # serialize heavy runs; do NOT block reads
-            return a.confirm_action((body or {}).get("id", ""),
-                                    approve=bool((body or {}).get("approve", True)))
-    out = await asyncio.to_thread(_run)                  # off the event loop
-    return JSONResponse(out)
+    def _run():
+        with _RUN_LOCK:                                      # serialize heavy runs; never block reads
+            return a.confirm_action(aid, approve=True)
+    jid = _start_job(_run)
+    return JSONResponse({"async": True, "job_id": jid, "status": "running",
+                         "desc": pa.get("desc")})
+
+
+@app.get("/api/compute")
+def compute_status() -> JSONResponse:
+    """W2 Adaptive Compute Manager governor view (live CPU/RAM/workers) for the
+    dashboard compute tile."""
+    from pattern_brain.compute import ComputeManager
+    return JSONResponse(ComputeManager().stats())
 
 
 @app.post("/api/agent/consolidate")

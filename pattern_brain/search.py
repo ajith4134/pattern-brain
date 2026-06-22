@@ -151,15 +151,16 @@ class DAGSearch:
         return score
 
     def hyperband_search(self, max_configs: int = 27, eta: int = 3,
-                         rungs=None, n_brackets: int = 2) -> Optional[Dict]:
+                         rungs=None, n_brackets: int = 2, compute=None) -> Optional[Dict]:
         """Budget-aware smart search (Successive Halving / Hyperband, PLAN §17.1
         W1): screen many candidates cheaply, refine only survivors at full budget.
         ``rungs`` = optional ``[(steps, n_samples), ...]`` ladder (lighter ladders
-        keep an interactive run fast). Returns the Hyperband report; the best spec
-        is also on the leaderboard."""
+        keep an interactive run fast). ``compute`` = optional W2 ``ComputeManager``
+        to evaluate screening rungs in parallel across cores. Returns the Hyperband
+        report; the best spec is also on the leaderboard."""
         from .scheduler import Hyperband
         self._budget = max(self._budget, max_configs)
-        return Hyperband(self, eta=eta, rungs=rungs, seed=self.seed).run(
+        return Hyperband(self, eta=eta, rungs=rungs, seed=self.seed, compute=compute).run(
             max_configs=max_configs, n_brackets=n_brackets)
 
     # -------------------------------------------------------------- strategies

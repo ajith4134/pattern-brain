@@ -6,3 +6,4 @@ fastapi>=0.110
 uvicorn>=0.29
 websockets>=12.0
 httpx>=0.27          # used by fastapi.testclient.TestClient (tests/test_dashboard.py)
+psutil

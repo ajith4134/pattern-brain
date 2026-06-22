@@ -116,15 +116,44 @@ def test_hyperband_runs_and_records():
           f"{round(float(best.get('crps_skill') or 0),4)}")
 
 
+def test_compute_manager_parallel_matches_serial():
+    """W2: the ComputeManager parallelizes screening rungs and must give the SAME
+    result as serial (determinism preserved), with a sane worker budget."""
+    from pattern_brain.compute import ComputeManager
+    cm = ComputeManager()
+    st = cm.stats()
+    check(st["cores"] and st["workers"] >= 1, "compute stats should report cores/workers")
+    check(cm.n_workers(8) >= 1 and cm.n_workers(8) <= (st["cores"] or 99),
+          "n_workers should be within [1, cores]")
+    rungs = [(20, 10), (45, 20), (80, 30)]
+
+    def best_skill(compute):
+        X = _ar_data(T=240, seed=3)
+        lb = Leaderboard(":memory:")
+        s = DAGSearch(X, leaderboard=lb, max_base=3, min_train=40, n_samples=30, seed=0)
+        rep = s.hyperband_search(max_configs=9, eta=3, n_brackets=1, rungs=rungs, compute=compute)
+        b = float((rep["best"] or {}).get("crps_skill") or 0.0)
+        lb.close()
+        return b
+
+    serial = best_skill(None)
+    parallel = best_skill(cm)
+    check(abs(serial - parallel) < 1e-9,
+          f"parallel must match serial (got serial={serial}, parallel={parallel})")
+    print(f"  compute manager: {st['workers']} workers (psutil={st['psutil']}); "
+          f"parallel == serial (skill {round(parallel,4)})")
+
+
 def main():
     print("=" * 70)
-    print("Pattern Brain — W3 genome + W1 Hyperband/Successive-Halving: tests")
+    print("Pattern Brain — W3 genome + W1 Hyperband/Successive-Halving + W2 compute: tests")
     print("=" * 70)
     test_genome_metadata()
     test_compatibility_predicate()
     test_budgeted_scoring_cheaper()
     test_successive_halving_reduces_and_picks()
     test_hyperband_runs_and_records()
+    test_compute_manager_parallel_matches_serial()
     print("=" * 70)
     if FAILS:
         print(f"FAILED: {len(FAILS)} check(s):")

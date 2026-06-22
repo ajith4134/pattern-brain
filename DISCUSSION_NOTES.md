@@ -1664,3 +1664,19 @@ VERIFIED LIVE (Rule 19): ML Engineer endpoints all 200 in ms (was hanging foreve
 Honest: 41s live is CPU-bound single-thread — the proper speedup is W2 (parallel compute manager) / W6 (Rust core), per plan, not this turn.
 
 Rules applied: 1, 2, 4, 5, 7, 10, 14, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26.
+
+## 2026-06-22 — W2 (Adaptive Compute Manager / parallel) + async operator jobs (both, owner-approved)
+
+Owner: "do both" = W2 compute manager + idea-1 async job-status.
+
+W2 — pattern_brain/compute.py: ComputeManager (governor: workers = cores×95%, then RAM-bounded via psutil to avoid swap; parallel_map over ProcessPoolExecutor with serial fallback; stats() for the tile) + module-level score_spec_payload worker. Wired into SuccessiveHalving/Hyperband/DAGSearch.hyperband_search(compute=) — parallelizes the SCREENING rungs across cores; final rung stays in-process so survivors are recorded to the leaderboard. Operator run_dag_search passes a ComputeManager. New /api/compute endpoint + "Adaptive Compute Manager" dashboard tile (live cores/workers/CPU%/RAM%). Found psutil was in system-python but NOT the venv → installed it in the venv (requirements-dashboard.txt) so the RAM governor + tile are live.
+Evidence: test_scheduler W2 test green — parallel == serial (determinism preserved); 1.61x speedup (9.5→5.9s) on the small config (grows with bigger searches); /api/compute live = 12 cores/11 workers/RAM 5.5%/32GB free/psutil True/gpu none.
+
+Idea 1 — async operator jobs: POST /api/agent/confirm now dispatches a heavy run as a BACKGROUND JOB (returns {async:true, job_id} instantly); GET /api/agent/job/<id> polls status/elapsed/result. Cancels/no-op confirms still instant. Server _JOBS registry + _start_job (bounded, daemon threads under _RUN_LOCK). Frontend confirmAct polls every 1.5s, shows "⚙ running… Ns", appends the result when done.
+Evidence (verified live): stage→confirm returned job_id instantly; poll → done with "rung ladder 9→3→1, best mixture skill 0.1844" on LIVE BTC; ML Engineer endpoints + page stayed responsive throughout. Fixed a stale desc ("~24"→"~9 candidates, parallelized"). test_file_access + test_dashboard green.
+
+Net effect: searches no longer block the chat; they run in parallel across cores under a swap-safe governor, with live progress. The 41s synchronous BTC search is now a non-blocking job (and parallelized). Bigger speedups come with bigger searches / future ASHA.
+
+Follow-ons: ASHA async promotion; per-job RAM footprint learning; rung-level progress in the job poller (currently coarse elapsed).
+
+Rules applied: 1, 2, 4, 5, 7, 10, 14, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26.

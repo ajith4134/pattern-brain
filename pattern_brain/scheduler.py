@@ -38,9 +38,11 @@ class SuccessiveHalving:
     """One Successive-Halving bracket over a :class:`DAGSearch`."""
 
     def __init__(self, search: DAGSearch, eta: int = 3,
-                 rungs: Optional[List[Tuple[int, int]]] = None, seed: int = 0) -> None:
+                 rungs: Optional[List[Tuple[int, int]]] = None, seed: int = 0,
+                 compute=None) -> None:
         self.s = search
         self.eta = max(2, int(eta))
+        self.compute = compute               # optional W2 ComputeManager → parallel rungs
         # (forecast_steps, n_samples) ladder — cheap → expensive. Budgeting by STEPS
         # (not data fraction) bounds cost regardless of how much data was loaded,
         # since walk-forward step count is the dominant cost driver.
@@ -72,8 +74,17 @@ class SuccessiveHalving:
         history: List[Dict[str, Any]] = []
         for ri, (steps, ns) in enumerate(self.rungs):
             last = ri == len(self.rungs) - 1
-            scored = [(self.s.score_spec_budgeted(spec, steps=steps, n_samples=ns, record=last),
-                       spec) for spec in cands]
+            # Parallelize the SCREENING rungs across cores (W2); run the final rung
+            # serially in-process so its survivors are recorded to the leaderboard.
+            if self.compute is not None and not last and len(cands) > 1:
+                from .compute import score_spec_payload
+                payloads = [{"spec": spec.to_dict(), "X": self.s.X, "min_train": self.s.min_train,
+                             "n_samples": ns, "steps": steps, "seed": self.s.seed} for spec in cands]
+                results = self.compute.parallel_map(score_spec_payload, payloads)
+                scored = [(r["score"], spec) for r, spec in zip(results, cands)]
+            else:
+                scored = [(self.s.score_spec_budgeted(spec, steps=steps, n_samples=ns, record=last),
+                           spec) for spec in cands]
             scored.sort(key=lambda z: _safe_skill(z[0]), reverse=True)
             if last:
                 kept = len(scored)
@@ -92,17 +103,19 @@ class Hyperband:
     """A few Successive-Halving brackets of decreasing width (PLAN §17.1 W1)."""
 
     def __init__(self, search: DAGSearch, eta: int = 3, seed: int = 0,
-                 rungs: Optional[List[Tuple[int, int]]] = None) -> None:
+                 rungs: Optional[List[Tuple[int, int]]] = None, compute=None) -> None:
         self.s = search
         self.eta = max(2, int(eta))
         self.seed = seed
         self.rungs = rungs
+        self.compute = compute
 
     def run(self, max_configs: int = 27, n_brackets: int = 2) -> Dict[str, Any]:
         brackets: List[Dict[str, Any]] = []
         n = max(self.eta, max_configs)
         for b in range(max(1, n_brackets)):
-            sh = SuccessiveHalving(self.s, eta=self.eta, rungs=self.rungs, seed=self.seed + b)
+            sh = SuccessiveHalving(self.s, eta=self.eta, rungs=self.rungs,
+                                   seed=self.seed + b, compute=self.compute)
             brackets.append(sh.run(n_configs=n))
             n = max(self.eta, n // self.eta)        # next bracket: fewer, deeper candidates
         return {"best": self.s.best(),
