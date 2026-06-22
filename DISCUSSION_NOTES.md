@@ -1680,3 +1680,22 @@ Net effect: searches no longer block the chat; they run in parallel across cores
 Follow-ons: ASHA async promotion; per-job RAM footprint learning; rung-level progress in the job poller (currently coarse elapsed).
 
 Rules applied: 1, 2, 4, 5, 7, 10, 14, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26.
+
+## 2026-06-22 — FIX: wrong date in chat + stale pending action + transient "Failed to fetch"
+
+Owner report: chat said "Today's date is June 18, 2025" (wrong); "read the leaderboard" → "⚠ request failed: TypeError: Failed to fetch".
+
+DIAGNOSIS:
+1. Wrong date — the chat system prompt carried NO date, so the LLM (zai) hallucinated one from training. 
+2. "Failed to fetch" = browser network-level failure; root cause was my repeated server restarts during the owner's session (each restart kills in-flight requests). On reproduction the endpoint works (HTTP 200). BUT diagnosis surfaced a real adjacent bug:
+3. STALE pending action — chat returns {reply, pending: a.pending_action()}, but _pending_action was only cleared on confirm/cancel. If the user staged a write action then sent a different message, the stale pending lingered and re-appeared as a Confirm panel on every later reply (saw "read the leaderboard" come back WITH a run_dag_search pending attached).
+
+FIXES (engineer.py chat()):
+- Inject the real date into the system prompt: "Current date: YYYY-MM-DD (Weekday). Use THIS for any date/time question — do not guess." (datetime.now()).
+- Clear _pending_action when a non-confirm/cancel message arrives (user moved on) so stale staging never re-appears.
+
+VERIFIED LIVE: date → "Today is 2026-06-22 (Monday)"; "read the leaderboard" → pending None; stage→ask-else → pending cleared (None). test_file_access green. Minimized further restarts.
+
+NOTE (owner's bigger ask: "use all models, predict 5m AND 15m, wait, compare to real"): the operator does ONE single-timeframe DAG search per confirm; true multi-timeframe predict-and-compare = W4 (Quality-Diversity multi-horizon archive) + the capstone forward-test, the next planned workstream — not a one-click action yet. The LLM explained the steps correctly but the tool can't execute the full multi-tf workflow. Flagged for W4.
+
+Rules applied: 1, 2, 4, 5, 7, 10, 14, 18, 19, 20, 21, 24, 26.

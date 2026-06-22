@@ -337,6 +337,9 @@ class MLEngineerAgent:
                 return self.confirm_action(self._pending_action["id"], approve=True)["reply"]
             if low in ("cancel", "no", "n", "abort", "stop", "nevermind", "never mind"):
                 return self.confirm_action(self._pending_action["id"], approve=False)["reply"]
+            # user moved on without confirming → abandon the stale staged action so it
+            # doesn't keep re-appearing as a pending confirm on later replies.
+            self._pending_action = None
         observe = self.toolbox.observe_state()
         kn = self.toolbox.retrieve_knowledge(message, k=3)
         recalls = self.toolbox.recall_memory(message, k=3)
@@ -358,8 +361,11 @@ class MLEngineerAgent:
             '{"tool":"run_dag_search","symbol":"BTC/USD","timeframe":"1h"}  — search network combinations on a symbol\n'
             '{"tool":"run_capstone","symbol":"BTC/USD","timeframe":"1h"}    — run the freeze->forward-test capstone\n'
             "Emit a run tool ONLY when the user explicitly asks to run/execute something; otherwise stay read-only.")
+        from datetime import datetime
+        today = datetime.now().strftime("%Y-%m-%d (%A)")
         sys = (PERSONA + "\nYou are the ML Engineer for the Pattern Brain project (a network-of-models "
                "that forecasts return distributions). Answer concretely, citing files/nodes/numbers.\n"
+               f"Current date: {today}. Use THIS for any date/time question — do not guess from training data.\n"
                f"Live state: {json.dumps(observe)[:1000]}\n"
                f"Retrieved knowledge: {json.dumps(kn)[:600]}\n"
                f"Your past answers (reuse if they fit): {json.dumps(recalls)[:700]}\n" + tools_help)
