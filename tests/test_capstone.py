@@ -106,6 +106,29 @@ def test_run_crypto_capstone_offline():
           f"next_price_est={rep['next_price_est']:.1f} (last_close={rep['last_close']:.1f})")
 
 
+def test_run_crypto_sweep_offline():
+    res = crypto.run_crypto_sweep(symbols=("SYNTHA/USD", "SYNTHB/USD"), timeframes=("1h",),
+                                  prefer_live=False, holdout_frac=0.3, strategy="random",
+                                  budget=4, base_pool=POOL, min_train=45, n_samples=30, seed=0)
+    agg = res["aggregate"]
+    check(agg["n_runs"] == 2 and agg["n_failed"] == 0, f"sweep should run 2 ok, got {agg}")
+    check(agg["median_forward_skill"] is not None and 0 <= agg["n_pass"] <= 2, "sweep agg malformed")
+    check(len(res["runs"]) == 2, "sweep should report a row per symbol×timeframe")
+    print(f"  sweep (offline, 2 runs): median skill={agg['median_forward_skill']:.3f}, "
+          f"pass={agg['n_pass']}/{agg['n_runs']}")
+
+
+def test_volatility_target_offline():
+    rep = crypto.run_crypto_capstone("SYNTHA/USD", prefer_live=False, target="volatility",
+                                     holdout_frac=0.3, strategy="random", budget=4,
+                                     base_pool=POOL, min_train=45, n_samples=30, seed=0)
+    check(rep.get("target") == "volatility", "report should carry the volatility target")
+    check(rep["next_price_est"] is None, "vol target must NOT produce a price estimate")
+    check(rep["verdict"] in ("PASS", "WEAK", "FAIL"), f"bad vol verdict {rep['verdict']}")
+    print(f"  volatility target: verdict={rep['verdict']}, skill={rep['forward_skill']:.3f} "
+          f"(no price est, correct)")
+
+
 def test_ccxt_live_guarded():
     if not crypto.ccxt_available():
         print("  ccxt not installed -> live fetch skipped cleanly")
@@ -129,6 +152,8 @@ def main():
     test_crypto_synthetic_and_cache_guard()
     test_fetch_crypto_symbol_tool()
     test_run_crypto_capstone_offline()
+    test_run_crypto_sweep_offline()
+    test_volatility_target_offline()
     test_ccxt_live_guarded()
     print("=" * 70)
     if FAILS:

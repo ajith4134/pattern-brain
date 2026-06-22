@@ -103,7 +103,8 @@ def run_capstone(matrix, *, holdout_frac: float = 0.3, strategy: str = "evolutio
     # 6. the actual NEXT future move (frozen net) -----------------------------
     nm = _next_move(best_spec, x0, X, n_samples, seed)
     last_close = (meta or {}).get("last_close")
-    next_price = (float(last_close) * float(np.exp(nm["mean"]))) if last_close else None
+    is_return_target = (meta or {}).get("target", "return") == "return"
+    next_price = (float(last_close) * float(np.exp(nm["mean"]))) if (last_close and is_return_target) else None
 
     verdict = ("PASS" if (fskill > 0 and cal["calibrated"] and dsr is not None and dsr >= 0.95)
                else "WEAK" if fskill > 0 else "FAIL")

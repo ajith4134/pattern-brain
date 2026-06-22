@@ -79,12 +79,24 @@ def _cache_path(symbol: str, timeframe: str, exchange: str) -> str:
     return p
 
 
+def _causal_vol(r: np.ndarray, w: int = 12) -> np.ndarray:
+    """Causal rolling realized volatility of a return series (no look-ahead)."""
+    out = np.empty(len(r))
+    for t in range(len(r)):
+        seg = r[max(0, t - w + 1): t + 1]
+        out[t] = float(np.std(seg)) if len(seg) > 1 else abs(float(r[t]))
+    return out
+
+
 def load_symbol(symbol: str = "BTC/USD", timeframe: str = "1h", limit: int = 600,
                 exchange: str = "kraken", prefer_live: bool = True,
                 use_cache: bool = True, allow_synthetic: bool = True,
-                frac_thresh: float = 1e-3) -> Dict[str, object]:
-    """Load a symbol → generic ``(T, D)`` (col 0 = log-return). Tries live ccxt →
-    on-disk cache → synthetic, reporting which ``source`` was used."""
+                frac_thresh: float = 1e-3, target: str = "return") -> Dict[str, object]:
+    """Load a symbol → generic ``(T, D)``. ``target`` picks column 0 (the prediction
+    target): ``"return"`` (log-return — the next-move target), ``"volatility"``
+    (causal realized vol — vol is strongly autocorrelated, so this is where the
+    network is expected to show real predictability), or ``"abs_return"``. Tries
+    live ccxt → on-disk cache → synthetic, reporting which ``source`` was used."""
     ohlcv, source = None, None
     cp = _cache_path(symbol, timeframe, exchange)
     if prefer_live and _HAS_CCXT:
@@ -104,21 +116,68 @@ def load_symbol(symbol: str = "BTC/USD", timeframe: str = "1h", limit: int = 600
     cs = CandleSeries.from_ohlcv(ohlcv, has_timestamp=True)
     ad = StockDataAdapter(features=_CAPSTONE_FEATURES, frac_thresh=frac_thresh)
     matrix = ad.transform(cs)
+    names = list(ad.feature_names)
+    if target in ("volatility", "abs_return"):           # prepend the chosen target as col 0
+        r = matrix[:, 0]
+        col0 = _causal_vol(r) if target == "volatility" else np.abs(r)
+        matrix = np.column_stack([col0, matrix])
+        names = [("realized_vol" if target == "volatility" else "abs_return")] + names
+    elif target != "return":
+        raise ValueError(f"unknown target {target!r}; use return|volatility|abs_return")
     return {"symbol": symbol, "timeframe": timeframe, "exchange": exchange, "source": source,
             "n_candles": int(len(ohlcv)), "last_close": float(ohlcv[-1, 4]),
-            "matrix": matrix, "feature_names": list(ad.feature_names)}
+            "target": target, "matrix": matrix, "feature_names": names}
 
 
 def run_crypto_capstone(symbol: str = "BTC/USD", timeframe: str = "1h", limit: int = 600,
                         exchange: str = "kraken", prefer_live: bool = True,
-                        **capstone_kw) -> Dict[str, object]:
+                        target: str = "return", **capstone_kw) -> Dict[str, object]:
     """Load the symbol, then run the domain-agnostic freeze→forward-test capstone."""
     from ..capstone import run_capstone
-    d = load_symbol(symbol, timeframe, limit, exchange, prefer_live=prefer_live)
+    d = load_symbol(symbol, timeframe, limit, exchange, prefer_live=prefer_live, target=target)
     meta = {k: d[k] for k in ("symbol", "timeframe", "exchange", "source", "n_candles",
-                              "last_close", "feature_names")}
+                              "last_close", "target", "feature_names")}
     return run_capstone(d["matrix"], meta=meta, **capstone_kw)
 
 
+def run_crypto_sweep(symbols=("BTC/USD", "ETH/USD", "SOL/USD"),
+                     timeframes=("1h", "4h"), exchange: str = "kraken",
+                     prefer_live: bool = True, target: str = "return",
+                     **capstone_kw) -> Dict[str, object]:
+    """Robustness sweep: run the frozen forward-test across several symbols ×
+    timeframes (proxy regimes). One symbol is one data point; the aggregate says
+    whether the distributional skill is REAL STRUCTURE or luck."""
+    keep = ("symbol", "timeframe", "source", "n_holdout", "history_skill", "forward_skill",
+            "forward_dsr", "forward_calibrated", "net_directional_hit",
+            "baseline_directional_hit", "verdict")
+    runs: List[Dict[str, object]] = []
+    for sym in symbols:
+        for tf in timeframes:
+            try:
+                r = run_crypto_capstone(sym, tf, exchange=exchange, prefer_live=prefer_live,
+                                        target=target, **capstone_kw)
+                runs.append({k: r.get(k) for k in keep})
+            except Exception as e:                       # one symbol failing must not kill the sweep
+                runs.append({"symbol": sym, "timeframe": tf, "error": f"{type(e).__name__}: {e}"})
+    ok = [r for r in runs if "error" not in r and r.get("forward_skill") is not None]
+
+    def _med(key, pred=lambda r: True):
+        vals = [float(r[key]) for r in ok if pred(r) and r.get(key) is not None]
+        return float(np.median(vals)) if vals else None
+
+    agg = {
+        "target": target, "n_runs": len(ok), "n_failed": len(runs) - len(ok),
+        "n_pass": sum(1 for r in ok if r["verdict"] == "PASS"),
+        "n_skill_positive": sum(1 for r in ok if r["forward_skill"] > 0),
+        "n_dsr_significant": sum(1 for r in ok if (r["forward_dsr"] or 0) >= 0.95),
+        "n_calibrated": sum(1 for r in ok if r["forward_calibrated"]),
+        "median_forward_skill": _med("forward_skill"),
+        "median_forward_dsr": _med("forward_dsr"),
+        "median_net_dir_hit": _med("net_directional_hit"),
+        "median_baseline_dir_hit": _med("baseline_directional_hit"),
+    }
+    return {"runs": runs, "aggregate": agg}
+
+
 __all__ = ["ccxt_available", "fetch_ohlcv", "synthetic_ohlcv", "load_symbol",
-           "run_crypto_capstone"]
+           "run_crypto_capstone", "run_crypto_sweep"]

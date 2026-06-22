@@ -1496,3 +1496,19 @@ HONEST READ (Rule 10, no overselling): the PASS is on DISTRIBUTIONAL/uncertainty
 PHASE 8 COMPLETE: the owner's vision (wire models into a network, feed raw data, score vs the live market, search the best combination, predict the next move) is realized end-to-end and verified on live data. PLAN §13 records the status. Next = owner's call (multi-symbol robustness, richer data columns, Capstone dashboard tab, or Phase 9 MoE gate).
 
 Rules applied: 1, 2, 4, 10, 18, 19, 20, 21, 22, 23, 24, 25, 26.
+
+---
+
+## 2026-06-22 — Post-Phase-8: robustness sweep + direction-aware target + dashboard fix/diagram
+
+Owner asked (in order): (1) multi-symbol robustness sweep, (2) direction-aware target, (3) Capstone dashboard tab — plus "dashboard is not working, check" and "is the visual diagram of how all the ML modules interconnect shown?".
+
+(1) ROBUSTNESS SWEEP — built run_crypto_sweep + ran LIVE (Kraken BTC/ETH/SOL × 1h/4h, 6 runs): ALL 6 positive forward CRPS-skill, ALL 6 DSR-significant (median skill 0.269). The distributional skill is REAL STRUCTURE across symbols & timeframes, not luck. 3 PASS (all 4h, calibrated) / 3 WEAK (all 1h, not calibrated → noisier). Direction at chance everywhere (0.49 vs 0.45). Honest: uncertainty forecasting generalizes; direction does not.
+
+(2) DIRECTION-AWARE TARGET — added target=return|volatility|abs_return to load_symbol (+ wrapper/sweep + next_price gated to return). LIVE BTC: return skill +0.204 net-dir 0.46; volatility skill +0.134 but net-dir 1.00 == baseline-dir 1.00 (vol direction trivially predictable by persistence). So vol target does NOT reveal network directional value. Across both targets the edge is DISTRIBUTIONAL, not directional. Built + tested regardless.
+
+(3) DASHBOARD — "not working" root cause = a stale server squatting port 8077 (recurring gotcha); the app was fine. Killed the zombie (fuser -k 8077/tcp), server binds, all endpoints 200. Added the interconnection VISUAL: the 🏆 Network tab now draws a ReactFlow graph input→base ML modules→combiner→output from the leaderboard's best DAGSpec (click a row to draw any net). Browser-verified via Playwright (project chromium): 6 nodes + 7 edges + 3 rows, ZERO JS errors. Answers "is the interconnection diagram shown" = now YES. Deferred: a dedicated Capstone tab.
+
+Overall honest scientific read after Phase 8 + hardening: the system is a genuine, leakage-safe, anti-overfit-gated network-of-models that demonstrably forecasts the next-return DISTRIBUTION (uncertainty/volatility) better than naive persistence — robustly across BTC/ETH/SOL × 1h/4h, DSR-significant — but does NOT predict direction better than chance. That is a real, publishable-quality negative-on-direction / positive-on-uncertainty result, and the rigor (purged selection, freeze, DSR deflation, PIT, multi-symbol replication) is what makes it trustworthy.
+
+Rules applied: 1, 2, 4, 10, 18, 19, 20, 21, 22, 23, 24, 25, 26.

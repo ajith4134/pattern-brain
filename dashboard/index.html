@@ -538,41 +538,96 @@ function BankView({ color }) {
     </div>`;
 }
 
-// --- Network leaderboard (Phase 8 §12 slice 6): which Stacked-DAG combinations
-// score best on the distributional CRPS, ranked, with the anti-overfit guard (skill
-// vs the naive baseline + DSR-significance).
+// --- Network (Phase 8 §12): the actual interconnected Stacked-DAG drawn as a graph
+// (input → base ML modules → combiner → output distribution) + the leaderboard of
+// which combinations score best, with the anti-overfit (DSR) guard.
+const _ioStyle = (c) => ({ background: "#0f1830", color: c, border: "1.5px solid " + c,
+  borderRadius: "8px", padding: "6px 10px", fontSize: "11px", width: 118,
+  whiteSpace: "pre-line", textAlign: "center" });
+
+// Build a ReactFlow graph from a DAGSpec: input → [layers of model nodes] → combiner → output.
+function dagFlow(spec) {
+  const nodes = [], edges = [];
+  const colX = (c) => 30 + c * 195;
+  nodes.push({ id: "in", position: { x: colX(0), y: 140 },
+    data: { label: "📥 input\n(T, D)" }, style: _ioStyle("#38bdf8"),
+    sourcePosition: "right", targetPosition: "left" });
+  let prev = ["in"], col = 1;
+  (spec.layers || []).forEach((layer, li) => {
+    const ids = [];
+    layer.forEach((nt, ni) => {
+      const id = `l${li}_${ni}`; ids.push(id);
+      nodes.push({ id, position: { x: colX(col), y: 40 + ni * 85 },
+        data: { label: nt }, style: nodeStyle("sequence", true),
+        sourcePosition: "right", targetPosition: "left" });
+      prev.forEach(p => edges.push({ id: `${p}-${id}`, source: p, target: id, animated: true,
+        style: { stroke: "#5eead4", strokeWidth: 2 }, markerEnd: { type: MarkerType.ArrowClosed } }));
+    });
+    prev = ids; col++;
+  });
+  nodes.push({ id: "comb", position: { x: colX(col), y: 140 },
+    data: { label: `🔀 combiner\n${spec.combiner}` }, style: _ioStyle("#fbbf24"),
+    sourcePosition: "right", targetPosition: "left" });
+  prev.forEach(p => edges.push({ id: `${p}-comb`, source: p, target: "comb", animated: true,
+    style: { stroke: "#fbbf24", strokeWidth: 2 }, markerEnd: { type: MarkerType.ArrowClosed } }));
+  nodes.push({ id: "out", position: { x: colX(col + 1), y: 140 },
+    data: { label: "📤 prediction\n(distribution)" }, style: _ioStyle("#34d399"), targetPosition: "left" });
+  edges.push({ id: "comb-out", source: "comb", target: "out", animated: true,
+    style: { stroke: "#34d399", strokeWidth: 2 }, markerEnd: { type: MarkerType.ArrowClosed } });
+  return { nodes, edges };
+}
+
 function NetworkView() {
   const [d, setD] = useState(null);
+  const [sel, setSel] = useState(0);
   useEffect(() => { fetch("/api/leaderboard").then(r => r.json()).then(setD).catch(()=>{}); }, []);
-  if (!d) return html`<div class="wrap"><div class="card"><h2>🏆 Network leaderboard</h2>
+  if (!d) return html`<div class="wrap"><div class="card"><h2>🏆 Network</h2>
     <div class="body"><span class="sub">scoring DAGs…</span></div></div></div>`;
-  const s = d.summary || {};
+  const s = d.summary || {}, top = d.top || [];
+  const spec = top.length ? JSON.parse(top[Math.min(sel, top.length-1)].spec_json) : null;
+  const flow = spec ? dagFlow(spec) : { nodes: [], edges: [] };
   return html`<div class="wrap"><div class="col" style=${{ flex: 1 }}>
     <div class="card">
-      <h2>🏆 Stacked-DAG leaderboard ${d.demo ? html`<span class="sub">(demo — slice 7 search will populate)</span>` : ""}</h2>
+      <h2>🧠 The network — how the model modules interconnect ${d.demo ? html`<span class="sub">(demo data)</span>` : ""}</h2>
+      <div class="body">
+        <span class="sub">The winning Stacked-DAG #${Math.min(sel,top.length-1)+1}: raw data flows into the base ML
+        modules (the "spheres"), whose outputs feed the ${spec ? spec.combiner : ""} combiner, which emits the final
+        predictive distribution. Click a leaderboard row to draw a different network.</span>
+        <div id="dag" style=${{ height: "340px", border: "1px solid var(--line)", borderRadius: "8px", marginTop: "8px" }}>
+          ${spec ? html`<${ReactFlow} nodes=${flow.nodes} edges=${flow.edges} fitView
+              proOptions=${{ hideAttribution: true }} nodesDraggable=${false} nodesConnectable=${false}>
+              <${Background} color="#26314f" gap=${20} />
+              <${Controls} showInteractive=${false} />
+            <//>` : html`<div class="body"><span class="sub">no network yet — run the search.</span></div>`}
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>🏆 Leaderboard — which combinations score best</h2>
       <div class="body">
         <span class="sub">runs ${s.n_runs} · distinct nets ${s.n_specs} · beat baseline ${s.n_beat_baseline} · DSR-significant ${s.n_dsr_significant}
         · best skill ${s.best_skill==null ? "—" : (+s.best_skill).toFixed(3)} (${s.best_combiner||"—"})</span>
         <table class="ftable" style=${{ marginTop: "10px" }}>
           <thead><tr><th>#</th><th>combiner</th><th>nodes</th><th class="num">CRPS</th>
-            <th class="num">skill</th><th class="num">calib KS</th><th>layers</th></tr></thead>
+            <th class="num">skill</th><th class="num">calib KS</th><th>modules</th></tr></thead>
           <tbody>
-            ${(d.top||[]).map((r,i) => html`<tr key=${i}>
+            ${top.map((r,i) => html`<tr key=${i} onClick=${() => setSel(i)}
+                 style=${{ cursor: "pointer", background: i===Math.min(sel,top.length-1) ? "var(--panel2)" : "transparent" }}>
               <td>${i+1}</td><td>${r.combiner}</td><td>${r.n_nodes}</td>
               <td class="num">${(+r.mean_crps).toFixed(3)}</td>
               <td class="num" style=${{ color: r.crps_skill>0 ? "#34d399" : "#f87171" }}>${(+r.crps_skill).toFixed(3)}</td>
               <td class="num">${(+r.calib_ks).toFixed(3)}${r.calibrated ? " ✓" : ""}</td>
-              <td><span class="sub">${JSON.parse(r.spec_json).layers.map(l=>l.join("+")).join(" → ")}</span></td>
+              <td><span class="sub">${JSON.parse(r.spec_json).layers.map(l=>l.join(" + ")).join(" → ")}</span></td>
             </tr>`)}
           </tbody>
         </table>
-        ${(d.top||[]).length===0 ? html`<span class="sub">no runs yet — the slice-7 search will fill this.</span>` : ""}
+        ${top.length===0 ? html`<span class="sub">no runs yet — the search will fill this.</span>` : ""}
       </div>
     </div>
     <div class="card"><h2>anti-overfit guard</h2><div class="body"><span class="sub">
       "skill" = CRPS improvement over the naive persistence baseline (green = actually beats nothing).
-      The slice-7 search ranks by the DSR-deflated score over the number of nets tried — so a high score
-      from data-mining many combinations does not win unless it survives selection-bias deflation.</span></div></div>
+      Ranked by the DSR-deflated score over the number of nets tried — a high score from data-mining many
+      combinations does not win unless it survives selection-bias deflation.</span></div></div>
   </div></div>`;
 }
 
