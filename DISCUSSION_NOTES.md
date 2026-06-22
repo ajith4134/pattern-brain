@@ -1427,3 +1427,18 @@ That headline IS this project's destiny, and ~70% exists:
 3. New light deps (allow Optuna + stdlib sqlite [rec] / zero new deps, implement search ourselves).
 
 Nothing marked decided in PLAN.md yet (Rule 21). Rules applied: 1, 2, 4, 5, 9, 10, 11, 13, 14, 16, 20, 21, 23, 26.
+
+---
+
+## 2026-06-22 — Phase 8 forks DECIDED + plan recorded (after online research)
+
+Owner: "understand the message, search online, then plan." Claude ran 2026 web research (AutoGluon multi-layer stacking/OOF; LLM-agent AutoML — AIDE/MLE-STAR/AutoML-Agent/ArchPilot; López de Prado CPCV/DSR/PBO anti-overfit; Optuna/NAS best practice) — all confirm the design and our unfair advantage (the Evaluator already has the anti-overfit machinery generic AutoML lacks).
+
+**Owner answered the three forks (AskUserQuestion):**
+1. Target/score = **FULL PREDICTIVE DISTRIBUTION** (proper scoring: CRPS/log-loss/Brier + PIT calibration), not point/direction. → fits our distributional nodes.
+2. Scope = **MULTIMODAL "any raw data" NOW** (the full brain diagram: per-modality encoders → shared space). → honored via the encoder-adapter pattern (Rule 23: encoders in adapters/), staged so the core DAG-search runs on numeric+text first and image/audio encoders fill in later.
+3. Deps = **Optuna + stdlib sqlite** approved.
+
+**Plan recorded in PLAN.md §12** ("Phase 8 — THE NETWORK: Multimodal AutoML Stacked-DAG Search w/ distributional scoring") with the 8-slice build order (scoring → encoders → feature factory → OOF harness → stacked-DAG → leaderboard → search → LLM planner), the 3 expert corrections (no AutoGluon-as-component; overfitting is THE risk and CPCV/DSR/PBO is the cure; Rule-23 feature split), dep verdicts, and concrete file targets. Status: forks DECIDED, build PLANNED — awaiting owner's go-ahead to start slice 1 (Rule 26 gate; this was a planning session, no code built this turn).
+
+Rules applied: 1, 2, 4, 5, 9, 10, 11, 12, 13, 15, 16, 20, 21, 22, 23, 26.
