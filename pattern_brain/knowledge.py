@@ -356,6 +356,47 @@ class KnowledgeBase:
     def recall(self, query: str, k: int = 5) -> List[Retrieval]:
         return self.retrieve(query, k=k, source_prefix="archival")
 
+    # ---- consolidation: promote good chat Q&A into first-class knowledge ----
+    #: substrings that mark a low-value answer not worth promoting to knowledge.
+    _QA_SKIP_MARKERS = ("[The ML Engineer — offline mode", "offline mode, no LLM",
+                        "TOOL RESULT", '{"tool"')
+
+    def consolidate_qa(self, *, min_chars: int = 120, min_answer_chars: int = 50,
+                       max_promote: int = 50) -> Dict[str, int]:
+        """Promote *good* chat Q&A (archival ``kind=chat_qa``) into a first-class,
+        retrievable knowledge source (``source="consolidated_qa"``) — the periodic
+        consolidation job (PLAN §9, idea 3). Raw chat_qa already lives in the store
+        but is uncurated and undifferentiated; this curates (quality-filters),
+        de-duplicates (by the question), and re-tags the survivors so a good answer
+        becomes durable knowledge surfaced by :meth:`retrieve`, not just recent
+        :meth:`recall`. Idempotent: re-running promotes only genuinely-new Q&A.
+        Returns counts {scanned, promoted, skipped_low_quality, skipped_dup}."""
+        scanned = promoted = low = dup = 0
+        for p in list(self.store._passages):              # snapshot: we add as we go
+            if p.source != "archival" or p.metadata.get("kind") != "chat_qa":
+                continue
+            scanned += 1
+            text = p.text or ""
+            q, a = _split_qa(text)
+            if (len(text) < min_chars or len(a) < min_answer_chars
+                    or any(m in text for m in self._QA_SKIP_MARKERS)):
+                low += 1
+                continue
+            cid = "consolidated_qa#" + hashlib.blake2b(
+                (q or text).strip().lower().encode("utf-8"), digest_size=10).hexdigest()
+            if cid in self.store._ids:                    # already promoted this question
+                dup += 1
+                continue
+            self.store.add(Passage(id=cid, text=text, source="consolidated_qa",
+                                   metadata={"kind": "consolidated_qa", "from": p.id,
+                                             "ts": time.time()}),
+                           self.embedder.embed(text))
+            promoted += 1
+            if promoted >= max_promote:
+                break
+        return {"scanned": scanned, "promoted": promoted,
+                "skipped_low_quality": low, "skipped_dup": dup}
+
     # ---- persistence (inside the folder, Rule 1) ----
     def save(self, name: str = "store") -> str:
         return self.store.save(self.store_dir, name=name)
@@ -367,6 +408,15 @@ class KnowledgeBase:
         return {"passages": len(self.store), "embedder": getattr(self.embedder, "name", "?"),
                 "dim": self.embedder.dim, "store_dir": self.store_dir,
                 "sources": sources, "archival": sources.get("archival", 0)}
+
+
+def _split_qa(text: str) -> Tuple[str, str]:
+    """Split a cached ``"Q: ...\\nA: ..."`` transcript into (question, answer).
+    Tolerant: if the markers are absent, the whole text is treated as the answer."""
+    m = re.search(r"Q:\s*(.*?)\n\s*A:\s*(.*)", text or "", re.DOTALL)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    return "", (text or "").strip()
 
 
 def _http_get(url: str, timeout: float = 20.0) -> str:

@@ -78,7 +78,8 @@ class MLEngineerAgent:
                  data_source: str = "synthetic",
                  population: int = 6, generations: int = 2,
                  max_promotions: int = 50, seed: int = 0,
-                 auto_ingest_books: bool = True) -> None:
+                 auto_ingest_books: bool = True,
+                 consolidate_every: int = 5) -> None:
         self.toolbox = toolbox or Toolbox()
         self.llm_chat = llm_chat
         self.state_dir = state_dir
@@ -101,6 +102,11 @@ class MLEngineerAgent:
         self.feed: List[Dict[str, Any]] = []          # bounded activity feed (dashboard)
         self.scoreboard: Dict[str, Dict[str, float]] = {f: {"runs": 0.0, "admitted": 0.0}
                                                          for f in self.features}
+        # operator mode (idea 2): a write action staged by chat, awaiting confirmation
+        self._pending_action: Optional[Dict[str, Any]] = None
+        # consolidation cadence (idea 3): chat Q&A promoted to knowledge every N turns
+        self.consolidate_every = max(0, int(consolidate_every))
+        self._qa_since_consolidate = 0
 
     # ------------------------------------------------- knowledge bootstrapping
     def ingest_books(self, max_chars: int = 40000) -> dict:
@@ -323,6 +329,14 @@ class MLEngineerAgent:
         ReAct loop lets the LLM read/search before answering; each Q&A is cached to
         archival memory and recalled on similar questions. Offline → templated reply."""
         self.ensure_books()
+        # operator mode (idea 2): if a write action is staged, a confirm/cancel reply
+        # routes straight to execution — no LLM round-trip needed.
+        if self._pending_action is not None:
+            low = (message or "").strip().lower()
+            if low in ("confirm", "yes", "y", "approve", "go", "go ahead", "do it", "run it"):
+                return self.confirm_action(self._pending_action["id"], approve=True)["reply"]
+            if low in ("cancel", "no", "n", "abort", "stop", "nevermind", "never mind"):
+                return self.confirm_action(self._pending_action["id"], approve=False)["reply"]
         observe = self.toolbox.observe_state()
         kn = self.toolbox.retrieve_knowledge(message, k=3)
         recalls = self.toolbox.recall_memory(message, k=3)
@@ -339,7 +353,11 @@ class MLEngineerAgent:
             '{"tool":"observe_state"}      — current bank/reputation state\n'
             "I will reply with the tool result; then use another tool or give your FINAL ANSWER as plain "
             "prose (no JSON). To answer 'why did the search pick X', READ the leaderboard first; to explain "
-            "HOW something works, READ the real code first.")
+            "HOW something works, READ the real code first.\n"
+            "You may also TRIGGER A REAL RUN (these are gated — they do NOT run until the human confirms):\n"
+            '{"tool":"run_dag_search","symbol":"BTC/USD","timeframe":"1h"}  — search network combinations on a symbol\n'
+            '{"tool":"run_capstone","symbol":"BTC/USD","timeframe":"1h"}    — run the freeze->forward-test capstone\n'
+            "Emit a run tool ONLY when the user explicitly asks to run/execute something; otherwise stay read-only.")
         sys = (PERSONA + "\nYou are the ML Engineer for the Pattern Brain project (a network-of-models "
                "that forecasts return distributions). Answer concretely, citing files/nodes/numbers.\n"
                f"Live state: {json.dumps(observe)[:1000]}\n"
@@ -355,6 +373,8 @@ class MLEngineerAgent:
                 answer = reply
                 break
             name = action.get("tool")
+            if name in self._CHAT_WRITE_TOOLS:           # operator mode: stage, don't run (idea 2)
+                return self._stage_write_action(name, action)
             if name not in self._CHAT_TOOLS:
                 result = {"error": f"{name!r} not available in chat (read-only): {list(self._CHAT_TOOLS)}"}
             else:
@@ -369,9 +389,150 @@ class MLEngineerAgent:
             answer = self.llm_chat(convo)
         try:                                                 # cache the Q&A (builds project knowledge)
             self.toolbox.remember(f"Q: {message}\nA: {answer}", kind="chat_qa")
+            self._maybe_consolidate()                        # periodic promotion to knowledge (idea 3)
         except Exception:
             pass
         return answer
+
+    # ------------------------------------------------- operator mode (idea 2)
+    #: chat may STAGE these write actions; they run only after human confirmation.
+    _CHAT_WRITE_TOOLS = ("run_dag_search", "run_capstone")
+
+    def _stage_write_action(self, name: str, action: Dict[str, Any]) -> str:
+        """Park a write action as a pending, confirmation-gated request and return a
+        human-readable proposal. Nothing executes until :meth:`confirm_action`."""
+        args = self._sanitize_write(name, {k: v for k, v in action.items() if k != "tool"})
+        aid = f"act-{int(time.time() * 1000)}"
+        self._pending_action = {"id": aid, "tool": name, "args": args,
+                                "desc": self._describe_write(name, args)}
+        return ("⏸ That is a WRITE action — it runs real compute, so it needs your confirmation.\n"
+                f"Proposed: {self._pending_action['desc']}\n"
+                "Click Confirm (or reply 'confirm' to proceed / 'cancel' to abort).")
+
+    def pending_action(self) -> Optional[Dict[str, Any]]:
+        """The currently-staged write action awaiting confirmation, if any."""
+        return self._pending_action
+
+    def confirm_action(self, action_id: str, approve: bool = True) -> Dict[str, Any]:
+        """Execute (or cancel) the staged write action. The single guarded boundary
+        that turns the assistant from observer into operator."""
+        pa = self._pending_action
+        if pa is None or pa.get("id") != action_id:
+            return {"ran": False, "reply": "No matching pending action to confirm "
+                    "(it may have already run or been cancelled)."}
+        self._pending_action = None
+        if not approve:
+            return {"ran": False, "reply": f"Cancelled: {pa['desc']}"}
+        try:
+            result = getattr(self, "_run_" + pa["tool"][4:])(**pa["args"]) \
+                if pa["tool"].startswith("run_") else None
+        except Exception as e:                               # surface failures honestly
+            return {"ran": False, "error": str(e), "reply": f"Action failed: {e}"}
+        reply = self._summarize_write(pa["tool"], result)
+        try:
+            self.toolbox.remember(f"Operator ran {pa['tool']}({pa['args']}): {reply}",
+                                  kind="operator_action")
+        except Exception:
+            pass
+        return {"ran": True, "reply": reply, "result": result}
+
+    @staticmethod
+    def _sanitize_write(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Clamp operator-action arguments to safe bounds (Rule-16 safety rails)."""
+        def _i(v, lo, hi, dflt):
+            try:
+                return int(max(lo, min(int(v), hi)))
+            except Exception:
+                return dflt
+        out = {"symbol": str(args.get("symbol", "BTC/USD"))[:20],
+               "timeframe": str(args.get("timeframe", "1h"))[:5],
+               "exchange": str(args.get("exchange", "kraken"))[:20],
+               "limit": _i(args.get("limit", 400), 120, 2000, 400),
+               "prefer_live": bool(args.get("prefer_live", True))}
+        if name == "run_dag_search":
+            out["rounds"] = _i(args.get("rounds", 2), 1, 4, 2)
+            out["n_per_round"] = _i(args.get("n_per_round", 4), 1, 6, 4)
+        return out
+
+    @staticmethod
+    def _describe_write(name: str, a: Dict[str, Any]) -> str:
+        if name == "run_dag_search":
+            return (f"DAG search on {a['symbol']} {a['timeframe']} "
+                    f"({a['rounds']}×{a['n_per_round']} proposals, {a['limit']} candles)")
+        return f"freeze→forward-test capstone on {a['symbol']} {a['timeframe']} ({a['limit']} candles)"
+
+    @staticmethod
+    def _summarize_write(name: str, result: Optional[Dict[str, Any]]) -> str:
+        r = result or {}
+        if name == "run_dag_search":
+            best = r.get("best") or {}
+            sk = best.get("crps_skill")
+            return (f"Ran DAG search on {r.get('symbol')} (data: {r.get('source')}, "
+                    f"{r.get('n_candles')} candles). Best: combiner={best.get('combiner')}, "
+                    f"CRPS-skill={None if sk is None else round(float(sk), 4)}. "
+                    "Ask 'read the leaderboard' to see all combinations.")
+        v = r.get("verdict")
+        return (f"Ran the capstone on {r.get('symbol')} (data: {r.get('source')}). "
+                f"Verdict={v}, forward-skill={r.get('forward_skill')}, "
+                f"DSR={r.get('forward_dsr')}, calibrated={r.get('forward_calibrated')}.")
+
+    def _run_dag_search(self, symbol="BTC/USD", timeframe="1h", limit=400,
+                        exchange="kraken", prefer_live=True,
+                        rounds=2, n_per_round=4) -> Dict[str, Any]:
+        """Operator action: load a symbol and drive a real Stacked-DAG search,
+        recording to the PERSISTENT leaderboard so the chat's ``read_leaderboard``
+        sees it afterward."""
+        from ..adapters.crypto import load_symbol
+        from ..leaderboard import Leaderboard
+        d = load_symbol(symbol, timeframe, limit, exchange, prefer_live=prefer_live)
+        lb = Leaderboard()                                   # on-disk → read_leaderboard sees it
+        try:
+            best = self.plan_dag_search(d["matrix"], rounds=rounds, n_per_round=n_per_round,
+                                        dataset_id=symbol, leaderboard=lb)
+        finally:
+            lb.close()
+        return {"symbol": symbol, "timeframe": timeframe, "source": d["source"],
+                "n_candles": d["n_candles"], "best": best}
+
+    def _run_capstone(self, symbol="BTC/USD", timeframe="1h", limit=400,
+                      exchange="kraken", prefer_live=True) -> Dict[str, Any]:
+        """Operator action: run the freeze→forward-test capstone on a symbol and
+        persist it so the chat's ``read_capstone`` sees the latest verdict."""
+        from ..adapters.crypto import run_crypto_capstone
+        rep = run_crypto_capstone(symbol, timeframe, limit, exchange, prefer_live=prefer_live,
+                                  holdout_frac=0.3, strategy="random", budget=6,
+                                  min_train=45, n_samples=80, seed=0, return_paths=False)
+        self._persist_capstone(rep)
+        return {"symbol": symbol, "timeframe": timeframe, "source": rep.get("source"),
+                "verdict": rep.get("verdict"), "forward_skill": rep.get("forward_skill"),
+                "forward_dsr": rep.get("forward_dsr"),
+                "forward_calibrated": rep.get("forward_calibrated")}
+
+    def _persist_capstone(self, rep: Dict[str, Any]) -> None:
+        try:
+            os.makedirs(self.state_dir, exist_ok=True)
+            with open(os.path.join(self.state_dir, "last_capstone.json"), "w") as fh:
+                json.dump({k: v for k, v in rep.items() if k != "forward_paths"}, fh)
+        except Exception:
+            pass
+
+    # ------------------------------------------------ consolidation (idea 3)
+    def consolidate(self, **kw) -> Dict[str, int]:
+        """Promote good chat Q&A into first-class knowledge (idea 3)."""
+        res = self.toolbox.consolidate_knowledge(**kw)
+        self._qa_since_consolidate = 0
+        return res
+
+    def _maybe_consolidate(self) -> None:
+        """Run consolidation every ``consolidate_every`` chat turns (best-effort)."""
+        if self.consolidate_every <= 0:
+            return
+        self._qa_since_consolidate += 1
+        if self._qa_since_consolidate >= self.consolidate_every:
+            try:
+                self.consolidate()
+            except Exception:
+                self._qa_since_consolidate = 0
 
     @staticmethod
     def _parse_tool(reply: str):

@@ -105,6 +105,67 @@ def test_chat_transcript_cached_and_recalled():
     print(f"  transcript caching: prior answer recalled on a similar question ({len(recalls)} hits)")
 
 
+def test_chat_write_tool_requires_confirmation():
+    """Idea 2: a write action ('run the capstone') is STAGED, not executed — it runs
+    only after explicit confirmation, and exactly once."""
+    ran = {"n": 0}
+    agent = MLEngineerAgent(
+        llm_chat=lambda m: '{"tool":"run_capstone","symbol":"X","prefer_live":false}')
+    agent.ensure_books = lambda *a, **k: None
+    agent._run_capstone = lambda **kw: (ran.__setitem__("n", ran["n"] + 1)
+                                        or {"verdict": "PASS", "symbol": "X", "source": "synthetic"})
+    reply = agent.chat("please run the capstone")
+    check(ran["n"] == 0, "the run must NOT execute during chat (confirmation required)")
+    check("confirm" in reply.lower(), f"chat should request confirmation; got {reply!r}")
+    pa = agent.pending_action()
+    check(pa and pa["tool"] == "run_capstone", "a pending action should be staged")
+    out = agent.confirm_action(pa["id"], approve=True)
+    check(ran["n"] == 1 and out["ran"], "confirm should execute the run exactly once")
+    check(agent.pending_action() is None, "pending action cleared after confirm")
+    print("  operator mode: write action gated behind explicit confirmation, runs once on confirm")
+
+
+def test_chat_write_tool_cancel():
+    """Idea 2: cancelling a staged action (button or typed 'cancel') runs nothing."""
+    ran = {"n": 0}
+    agent = MLEngineerAgent(
+        llm_chat=lambda m: '{"tool":"run_dag_search","symbol":"X","prefer_live":false}')
+    agent.ensure_books = lambda *a, **k: None
+    agent._run_dag_search = lambda **kw: (ran.__setitem__("n", ran["n"] + 1) or {})
+    agent.chat("run a dag search")
+    pa = agent.pending_action()
+    out = agent.confirm_action(pa["id"], approve=False)
+    check(ran["n"] == 0 and not out["ran"], "cancel must not execute the run")
+    check(agent.pending_action() is None, "pending cleared after cancel")
+    agent.chat("run a dag search")                       # stage again
+    r2 = agent.chat("cancel")                            # typed-cancel routes to cancellation
+    check("cancel" in r2.lower() and ran["n"] == 0, "typed 'cancel' should abort the staged action")
+    print("  operator mode: cancel (button + typed) aborts without running")
+
+
+def test_consolidate_qa():
+    """Idea 3: good chat Q&A is promoted into a first-class, retrievable knowledge
+    source; junk is skipped; the job is idempotent."""
+    agent = MLEngineerAgent(llm_chat=None)
+    kb = agent.toolbox.knowledge
+    answer = "Stacking won because it had the highest DSR and stayed calibrated across folds. " * 3
+    kb.remember("Q: what is the best combiner\nA: " + answer, kind="chat_qa")
+    kb.remember("Q: short one\nA: idk", kind="chat_qa")                       # too short → skip
+    kb.remember("Q: offline\nA: [The ML Engineer — offline mode, no LLM backend configured] nope",
+                kind="chat_qa")                                              # marker → skip
+    res = agent.consolidate()
+    check(res["promoted"] == 1, f"exactly one good Q&A should promote; got {res}")
+    check(res["skipped_low_quality"] >= 2, f"short + offline answers should be skipped; got {res}")
+    stats = kb.stats()
+    check(stats["sources"].get("consolidated_qa", 0) == 1, "a consolidated_qa knowledge source should exist")
+    hits = agent.toolbox.retrieve_knowledge("which combiner is best", k=5)
+    check(any(h.get("source") == "consolidated_qa" for h in hits),
+          "consolidated Q&A should be retrievable as first-class knowledge")
+    res2 = agent.consolidate()
+    check(res2["promoted"] == 0 and res2["skipped_dup"] >= 1, f"re-run should be idempotent; got {res2}")
+    print("  consolidation: good Q&A → first-class knowledge, junk skipped, idempotent")
+
+
 def main():
     print("=" * 70)
     print("Pattern Brain — LLM file access: tests")
@@ -115,6 +176,9 @@ def main():
     test_chat_blocks_nonread_tools()
     test_runtime_result_tools()
     test_chat_transcript_cached_and_recalled()
+    test_chat_write_tool_requires_confirmation()
+    test_chat_write_tool_cancel()
+    test_consolidate_qa()
     print("=" * 70)
     if FAILS:
         print(f"FAILED: {len(FAILS)} check(s):")

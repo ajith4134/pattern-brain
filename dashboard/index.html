@@ -848,6 +848,8 @@ function EngineerView({ color }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [chat, setChat] = useState([]);
+  const [pending, setPending] = useState(null);
+  const [actBusy, setActBusy] = useState(false);
   const [ideas, setIdeas] = useState([]);
   const [genBusy, setGenBusy] = useState(false);
   const refresh = useCallback(() => {
@@ -882,6 +884,23 @@ function EngineerView({ color }) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: m }) }).then(x => x.json());
     setChat(c => [...c, { role: "assistant", content: r.reply }]);
+    setPending(r.pending || null);
+  };
+  const confirmAct = async (approve) => {
+    if (!pending) return;
+    setActBusy(true);
+    try {
+      const r = await fetch("/api/agent/confirm", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: pending.id, approve }) }).then(x => x.json());
+      setChat(c => [...c, { role: "assistant", content: r.reply }]);
+      setPending(null);
+      refresh();
+    } finally { setActBusy(false); }
+  };
+  const consolidate = async () => {
+    const r = await fetch("/api/agent/consolidate", { method: "POST" }).then(x => x.json());
+    setKn(k => k ? { ...k, stats: r.stats } : k);
   };
 
   const inp = { background: "var(--panel2)", color: "var(--txt)", border: "1px solid var(--line)",
@@ -926,11 +945,13 @@ function EngineerView({ color }) {
           ${kn ? html`
             <div class="kv"><span>passages indexed</span><span>${kn.stats.passages}</span></div>
             <div class="kv"><span>archival memories (own findings)</span><span>${kn.stats.archival}</span></div>
+            <div class="kv"><span>consolidated Q&A (first-class knowledge)</span><span>${(kn.stats.sources && kn.stats.sources.consolidated_qa) || 0}</span></div>
             <div class="kv"><span>embedder</span><span>${kn.stats.embedder} (dim ${kn.stats.dim})</span></div>
             <div style=${{ marginTop: "8px" }}>
               <button onClick=${async () => { await fetch("/api/agent/ingest_books", {method:"POST"}); refresh(); }}>
                 📥 Ingest books → vector DB now</button>
-              <span class="sub" style=${{ marginLeft: "8px" }}>(also runs automatically in the background on startup)</span>
+              <button onClick=${consolidate} style=${{ marginLeft: "8px" }}>♻ Consolidate Q&A → knowledge</button>
+              <span class="sub" style=${{ marginLeft: "8px" }}>(books also auto-ingest on startup; good chat answers are auto-promoted periodically)</span>
             </div>
             <div style=${{ marginTop: "8px" }}>Open-access ML-engineering corpus (fetched on demand):</div>
             ${kn.books.map((b,i) => html`<div class="kv" key=${i}>
@@ -949,13 +970,21 @@ function EngineerView({ color }) {
               <b style=${{ color: m.role === "user" ? "#7dd3fc" : "#5eead4" }}>${m.role === "user" ? "you" : "ML Engineer"}:</b>
               <div style=${{ whiteSpace: "pre-wrap" }}>${m.content}</div></div>`)}
           </div>
+          ${pending ? html`<div style=${{ border: "1px solid #f59e0b", background: "var(--panel2)",
+              borderRadius: "6px", padding: "8px 10px", margin: "6px 0" }}>
+            <div>⏸ <b>Confirm a real run</b> — the agent wants to:</div>
+            <div style=${{ color: "#fcd34d", margin: "4px 0" }}>${pending.desc}</div>
+            <button onClick=${() => confirmAct(true)} disabled=${actBusy}>${actBusy ? "running…" : "✓ Confirm & run"}</button>
+            <button onClick=${() => confirmAct(false)} disabled=${actBusy} style=${{ marginLeft: "6px" }}>✕ Cancel</button>
+          </div>` : null}
           <div style=${{ display: "flex", gap: "8px" }}>
-            <input style=${inp} placeholder="message the agent…" value=${msg}
+            <input style=${inp} placeholder=${'message the agent… (try "run a DAG search on BTC/USD")'} value=${msg}
                    onInput=${e => setMsg(e.target.value)}
                    onChange=${e => setMsg(e.target.value)}
                    onKeyDown=${e => { if (e.key === "Enter") send(); }} />
             <button onClick=${send}>send</button>
           </div>
+          <div class="hint" style=${{ marginTop: "6px" }}>Read-only by default; "run …" requests are gated — they execute only after you Confirm.</div>
         </div>
       </div>
 

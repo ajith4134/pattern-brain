@@ -138,6 +138,11 @@ class Toolbox:
     def ingest_books(self, max_chars: int = 200_000) -> Dict[str, int]:
         return self.knowledge.ingest_manifest(max_chars=max_chars)
 
+    def consolidate_knowledge(self, **kw) -> Dict[str, int]:
+        """Promote good chat Q&A into first-class knowledge (idea 3, see
+        ``KnowledgeBase.consolidate_qa``)."""
+        return self.knowledge.consolidate_qa(**kw)
+
     # ----------------------------------------------------------- internet
     def web_fetch(self, url: str, max_chars: int = 100_000) -> str:
         raw = self.fetch(url)

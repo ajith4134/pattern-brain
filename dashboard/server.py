@@ -634,12 +634,34 @@ def galton(rows: int = 12, balls: int = 2000) -> JSONResponse:
 
 @app.post("/api/agent/chat")
 async def agent_chat(request: Request) -> JSONResponse:
-    """Converse with the agent (the owner's 'talk to it like this session')."""
+    """Converse with the agent (the owner's 'talk to it like this session').
+    May return a ``pending`` write action (idea 2) the user must Confirm to run."""
     body = await request.json()
     message = (body or {}).get("message", "")
     history = (body or {}).get("history", [])
-    reply = _agent().chat(message, history=history)
-    return JSONResponse({"reply": reply})
+    a = _agent()
+    reply = a.chat(message, history=history)
+    return JSONResponse({"reply": reply, "pending": a.pending_action()})
+
+
+@app.post("/api/agent/confirm")
+async def agent_confirm(request: Request) -> JSONResponse:
+    """Confirm (or cancel) a staged write action — the single guarded boundary that
+    lets the chat trigger a real run (DAG search / capstone), idea 2."""
+    body = await request.json()
+    a = _agent()
+    with _AGENT_LOCK:                                     # a run mutates shared state
+        out = a.confirm_action((body or {}).get("id", ""),
+                               approve=bool((body or {}).get("approve", True)))
+    return JSONResponse(out)
+
+
+@app.post("/api/agent/consolidate")
+def agent_consolidate() -> JSONResponse:
+    """Promote good chat Q&A into first-class knowledge (idea 3)."""
+    a = _agent()
+    res = a.consolidate()
+    return JSONResponse({"result": res, "stats": a.toolbox.knowledge.stats()})
 
 
 @app.websocket("/ws/run")
