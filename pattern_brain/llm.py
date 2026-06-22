@@ -206,6 +206,12 @@ def _openai_post(base_url: str, api_key: str, payload: Dict[str, Any],
         if name and e.code in (429, 402, 403):
             _trip_cooldown(name)
         raise
+    except Exception:                             # socket timeout / URLError / conn reset
+        # a backend that hangs or refuses must be skipped, not retried into the
+        # next slow call — trip the cooldown so the chain falls through fast.
+        if name:
+            _trip_cooldown(name)
+        raise
 
 
 def openai_compatible_completer(base_url: str, model: str, api_key: str,
@@ -226,7 +232,7 @@ def openai_compatible_completer(base_url: str, model: str, api_key: str,
 
 
 def openai_compatible_chat(base_url: str, model: str, api_key: str,
-                           timeout: float = 60.0, name: str = "") -> "TextCompleter":
+                           timeout: float = 30.0, name: str = "") -> "TextCompleter":
     """A free-form conversational callable for an OpenAI-compatible endpoint —
     the foundation the agent + dashboard chat (ENG-3/ENG-4) talk through."""
     def chat(messages: List[Dict[str, str]], temperature: float = 0.4) -> str:
@@ -376,7 +382,7 @@ def llm_backend_status() -> Dict[str, Any]:
 
 
 # -------------------------------------------------- conversational completers
-def ollama_chat(model: str = DEFAULT_OLLAMA_MODEL, timeout: float = 60.0) -> TextCompleter:
+def ollama_chat(model: str = DEFAULT_OLLAMA_MODEL, timeout: float = 25.0) -> TextCompleter:
     """Free-form chat over a local Ollama server (stdlib only)."""
     host = ollama_host()
 

@@ -640,7 +640,9 @@ async def agent_chat(request: Request) -> JSONResponse:
     message = (body or {}).get("message", "")
     history = (body or {}).get("history", [])
     a = _agent()
-    reply = a.chat(message, history=history)
+    # chat() blocks on LLM HTTP calls (a multi-step ReAct loop). Run it OFF the
+    # event loop so one slow/hung backend can't freeze the whole dashboard.
+    reply = await asyncio.to_thread(a.chat, message, history)
     return JSONResponse({"reply": reply, "pending": a.pending_action()})
 
 
@@ -650,9 +652,12 @@ async def agent_confirm(request: Request) -> JSONResponse:
     lets the chat trigger a real run (DAG search / capstone), idea 2."""
     body = await request.json()
     a = _agent()
-    with _AGENT_LOCK:                                     # a run mutates shared state
-        out = a.confirm_action((body or {}).get("id", ""),
-                               approve=bool((body or {}).get("approve", True)))
+
+    def _run():                                          # blocking compute (capstone/DAG search)
+        with _AGENT_LOCK:                                # a run mutates shared state
+            return a.confirm_action((body or {}).get("id", ""),
+                                    approve=bool((body or {}).get("approve", True)))
+    out = await asyncio.to_thread(_run)                  # off the event loop
     return JSONResponse(out)
 
 

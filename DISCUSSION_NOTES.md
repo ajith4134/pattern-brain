@@ -1603,3 +1603,25 @@ Evidence (Rule 25/19, verified live): tests/test_decomposition.py green (registr
 Honest: pysr_symbolic untestable here (no Julia). NEXT (item 2): W1 (Hyperband/ASHA smart search) + W3 (genome metadata + type-directed composition) — Phase A.
 
 Rules applied: 1, 2, 4, 5, 7, 10, 14, 16, 19, 20, 21, 22, 23, 24, 25, 26.
+
+## 2026-06-22 — FIX: dashboard frozen + ML agent not replying (owner report)
+
+Owner: dashboard not working + ML agent not replying; asked to check whether the chat text reaches all cloud + local LLMs.
+
+DIAGNOSIS (evidence-first):
+- Running server (PID 4140409, started 13:08) was WEDGED: curl /api/agent/chat → HTTP 000 (no response in 25s); /api/knowledge also empty. The process itself was hung, though the code passed the ASGI test suite in a separate process.
+- Per-backend probe (in-process, hard 25s timeouts, prompt "reply PONG"): zai OK 4.9s (this is the ACTIVE backend) ✓; qwen/nvidia/openrouter/groq OK ✓; deepseek FAIL 402 Payment Required (out of credit); cerebras FAIL 429 rate-limited; mistral TIMEOUT >25s (hangs); ollama TIMEOUT >25s (/api/tags up but /api/chat stalls on this no-GPU box). So the LLMs are NOT the root cause — the active one (zai) works.
+- ROOT CAUSE: /api/agent/chat and /api/agent/confirm were `async def` but called the BLOCKING chat() (a ReAct loop of up to 7 LLM HTTP calls). In a single-worker uvicorn that blocks the entire event loop → one slow/hung chat freezes EVERY endpoint incl. the dashboard page. A hung backend (mistral/ollama) makes the freeze permanent.
+
+FIXES:
+1. dashboard/server.py: run the blocking chat()/confirm_action() OFF the event loop via asyncio.to_thread (+ keep the _AGENT_LOCK inside the worker). Now a slow chat never blocks the dashboard.
+2. llm.py: _openai_post now trips the provider cooldown on ANY exception (socket timeout/URLError), not just 429/402/403 — a hanging backend (mistral) is skipped fast instead of being retried into the next slow call. Lowered chat timeouts: openai 60→30s, ollama 60→25s.
+3. Restarted the wedged server (kill + relaunch via .venv on 0.0.0.0:8077) — also loads today's new decomposition nodes (live bank now 199).
+
+VERIFIED LIVE (Rule 19):
+- /api/agent/chat "what is the Pattern Brain project?" → real reply in 4.9s (HTTP 200), pending=None.
+- FREEZE FIX PROVEN: during an active ~5s chat, /api/knowledge responded in 0.003s (was previously blocked).
+- Dashboard page / → HTTP 200 in 7ms; /api/overview=199 models; Signal decomposition family live 4/4.
+- Per-backend honest status for the owner: working now = zai(active), qwen, nvidia, openrouter, groq; broken = deepseek(402 top-up needed), cerebras(429 transient), mistral(hangs), ollama-local(hangs on no-GPU). The agent uses zai first, so it replies fine; the broken ones auto-cooldown.
+
+Rules applied: 1, 2, 4, 5, 7, 10, 14, 18, 19, 20, 21, 24, 26.
