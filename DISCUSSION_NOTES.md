@@ -1643,3 +1643,24 @@ Also this turn: fixed idea 1 (strip stray tool-JSON from final chat answer). Ser
 Follow-ons noted: ASHA (async) waits on W2 compute manager; surface rung-ladder + genome cards on dashboard; route operator run_dag_search through Hyperband. Item 3 = defer GPU/foundation-model/Rust (no action). 
 
 Rules applied: 1, 2, 4, 5, 7, 10, 12, 14, 16, 19, 20, 21, 22, 23, 24, 25, 26.
+
+## 2026-06-22 — FIX: ML Engineer tab stuck loading (deadlock) + wire run-dag-search → Hyperband
+
+Owner: ML Engineer section not working, stuck on loading symbol; also wire run-dag-search → Hyperband.
+
+DIAGNOSIS (evidence): event loop healthy (/ and /api/overview 200), but ALL agent endpoints hung (/api/knowledge, /api/agent/status, /api/advisor/ideas → HTTP 000). ROOT CAUSE = a self-deadlock: `_advisor()` acquired `_AGENT_LOCK` then called `_agent()` which acquires the SAME non-reentrant lock → first poll of /api/advisor/ideas (when the tab opens) deadlocks and holds _AGENT_LOCK forever → every agent endpoint that needs the lock hangs. (My earlier chat tests passed because they never hit the advisor endpoint.) Compounded by heavy step/confirm holding the same lock during long runs.
+
+FIXES:
+1. _AGENT_LOCK → threading.RLock() (reentrant, kills the self-deadlock); _advisor() now calls _agent() BEFORE taking the lock.
+2. New _RUN_LOCK for heavy runs (agent_step, agent_confirm) so they NEVER block the read-only endpoints the tab polls.
+3. ccxt fetch given timeout=8000ms + enableRateLimit so a live pull can't hang forever (falls back to cache/synthetic).
+
+WIRE run-dag-search → Hyperband (the requested feature):
+- engineer._run_dag_search now uses the W1 budget-aware scheduler (DAGSearch.hyperband_search) instead of the LLM proposer. Added optional rungs/n_brackets to hyperband_search + Hyperband; SuccessiveHalving budget switched from data-fraction to STEPS (forecast-step count = the dominant cost driver) via DAGSearch.score_spec_budgeted(steps=...). Operator default kept interactive: max_configs=9, max_base=3, n_samples=30, 1 bracket, light ladder [(20,10),(45,20),(80,30)].
+- Reply now surfaces the rung ladder: "Screened ~9 candidates in 13 budgeted evaluations (rung ladder: 9 → 3 → 1). Best: combiner=mixture, CRPS-skill=0.1844."
+
+VERIFIED LIVE (Rule 19): ML Engineer endpoints all 200 in ms (was hanging forever); tab stays responsive (status 2-20ms) DURING a heavy confirm; live operator dag-search on BTC completed in 41s end-to-end via Hyperband with the rung ladder in the reply. Timing: light config ~9s synthetic / ~41s live BTC (heavier real data) — acceptable for a confirmed action; bigger/parallel sweeps are the future W2 job. test_scheduler + test_file_access green.
+
+Honest: 41s live is CPU-bound single-thread — the proper speedup is W2 (parallel compute manager) / W6 (Rust core), per plan, not this turn.
+
+Rules applied: 1, 2, 4, 5, 7, 10, 14, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26.

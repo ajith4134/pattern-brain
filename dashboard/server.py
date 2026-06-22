@@ -524,7 +524,13 @@ def node_skill_endpoint() -> JSONResponse:
 
 # --------------------------------------------------- ML Engineer Agent (ENG-4)
 _AGENT = None
-_AGENT_LOCK = threading.Lock()
+# RLock (reentrant) so a helper that already holds it can call _agent() without
+# self-deadlocking. Used ONLY to guard lazy singleton CREATION — never held during
+# a long-running agent operation (those use _RUN_LOCK, below), so the read-only
+# status/knowledge/advisor endpoints the ML Engineer tab polls never block behind
+# a heavy run/confirm.
+_AGENT_LOCK = threading.RLock()
+_RUN_LOCK = threading.Lock()         # serializes heavy agent runs (step/confirm) off the read path
 
 
 def _agent():
@@ -554,10 +560,10 @@ _ADVISOR = None
 
 def _advisor():
     global _ADVISOR
+    a = _agent()                                         # get the agent FIRST (its own lock)
     with _AGENT_LOCK:
         if _ADVISOR is None:
             from pattern_brain.agent import IdeationAdvisor
-            a = _agent()
             _ADVISOR = IdeationAdvisor(toolbox=a.toolbox, llm_chat=a.llm_chat)
         return _ADVISOR
 
@@ -600,7 +606,7 @@ def agent_status() -> JSONResponse:
 def agent_step() -> JSONResponse:
     """Run ONE OODA loop step (Observe→Orient→Decide→Act→Rank/Record)."""
     a = _agent()
-    with _AGENT_LOCK:
+    with _RUN_LOCK:                                       # heavy run — must NOT block read endpoints
         r = a.step()
     return JSONResponse({"result": r.to_dict(), "status": a.status()})
 
@@ -660,7 +666,7 @@ async def agent_confirm(request: Request) -> JSONResponse:
     a = _agent()
 
     def _run():                                          # blocking compute (capstone/DAG search)
-        with _AGENT_LOCK:                                # a run mutates shared state
+        with _RUN_LOCK:                                  # serialize heavy runs; do NOT block reads
             return a.confirm_action((body or {}).get("id", ""),
                                     approve=bool((body or {}).get("approve", True)))
     out = await asyncio.to_thread(_run)                  # off the event loop

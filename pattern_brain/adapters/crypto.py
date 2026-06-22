@@ -46,7 +46,7 @@ def fetch_ohlcv(symbol: str = "BTC/USD", timeframe: str = "1h", limit: int = 600
     """Live OHLCV via ccxt → (T, 6) [ts_ms, open, high, low, close, volume]."""
     if not _HAS_CCXT:
         raise RuntimeError("ccxt not installed")
-    ex = getattr(ccxt, exchange)()
+    ex = getattr(ccxt, exchange)({"timeout": 8000, "enableRateLimit": True})  # ms — never hang forever
     arr = np.array(ex.fetch_ohlcv(symbol, timeframe, limit=limit), dtype=float)
     if arr.ndim != 2 or arr.shape[1] < 6 or len(arr) < 20:
         raise RuntimeError(f"bad OHLCV from {exchange} {symbol}: shape {arr.shape}")

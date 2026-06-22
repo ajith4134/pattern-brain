@@ -38,12 +38,14 @@ class SuccessiveHalving:
     """One Successive-Halving bracket over a :class:`DAGSearch`."""
 
     def __init__(self, search: DAGSearch, eta: int = 3,
-                 rungs: Optional[List[Tuple[float, int]]] = None, seed: int = 0) -> None:
+                 rungs: Optional[List[Tuple[int, int]]] = None, seed: int = 0) -> None:
         self.s = search
         self.eta = max(2, int(eta))
-        # (data_fraction, n_samples) ladder — cheap → expensive
-        full = max(40, int(self.s.n_samples))
-        self.rungs = rungs or [(0.4, 16), (0.7, 40), (1.0, full)]
+        # (forecast_steps, n_samples) ladder — cheap → expensive. Budgeting by STEPS
+        # (not data fraction) bounds cost regardless of how much data was loaded,
+        # since walk-forward step count is the dominant cost driver.
+        full = max(30, int(self.s.n_samples))
+        self.rungs = rungs or [(40, 16), (80, 30), (140, full)]
         self.rng = random.Random(seed)
 
     def _sample(self, n: int) -> List:
@@ -68,16 +70,16 @@ class SuccessiveHalving:
     def run(self, n_configs: int = 27) -> Dict[str, Any]:
         cands = self._sample(max(self.eta, n_configs))
         history: List[Dict[str, Any]] = []
-        for ri, (frac, ns) in enumerate(self.rungs):
+        for ri, (steps, ns) in enumerate(self.rungs):
             last = ri == len(self.rungs) - 1
-            scored = [(self.s.score_spec_budgeted(spec, frac=frac, n_samples=ns, record=last),
+            scored = [(self.s.score_spec_budgeted(spec, steps=steps, n_samples=ns, record=last),
                        spec) for spec in cands]
             scored.sort(key=lambda z: _safe_skill(z[0]), reverse=True)
             if last:
                 kept = len(scored)
             else:
                 kept = max(1, math.ceil(len(scored) / self.eta))
-            history.append({"rung": ri, "frac": frac, "n_samples": ns,
+            history.append({"rung": ri, "steps": steps, "n_samples": ns,
                             "evaluated": len(scored), "kept": kept,
                             "best_skill": round(_safe_skill(scored[0][0]), 4) if scored else None})
             cands = [spec for _, spec in scored[:kept]]
@@ -89,16 +91,18 @@ class SuccessiveHalving:
 class Hyperband:
     """A few Successive-Halving brackets of decreasing width (PLAN §17.1 W1)."""
 
-    def __init__(self, search: DAGSearch, eta: int = 3, seed: int = 0) -> None:
+    def __init__(self, search: DAGSearch, eta: int = 3, seed: int = 0,
+                 rungs: Optional[List[Tuple[int, int]]] = None) -> None:
         self.s = search
         self.eta = max(2, int(eta))
         self.seed = seed
+        self.rungs = rungs
 
     def run(self, max_configs: int = 27, n_brackets: int = 2) -> Dict[str, Any]:
         brackets: List[Dict[str, Any]] = []
         n = max(self.eta, max_configs)
         for b in range(max(1, n_brackets)):
-            sh = SuccessiveHalving(self.s, eta=self.eta, seed=self.seed + b)
+            sh = SuccessiveHalving(self.s, eta=self.eta, rungs=self.rungs, seed=self.seed + b)
             brackets.append(sh.run(n_configs=n))
             n = max(self.eta, n // self.eta)        # next bracket: fewer, deeper candidates
         return {"best": self.s.best(),

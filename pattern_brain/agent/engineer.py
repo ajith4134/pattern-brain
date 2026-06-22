@@ -461,8 +461,8 @@ class MLEngineerAgent:
     @staticmethod
     def _describe_write(name: str, a: Dict[str, Any]) -> str:
         if name == "run_dag_search":
-            return (f"DAG search on {a['symbol']} {a['timeframe']} "
-                    f"({a['rounds']}×{a['n_per_round']} proposals, {a['limit']} candles)")
+            return (f"Hyperband DAG search on {a['symbol']} {a['timeframe']} "
+                    f"(~{max(9, a['rounds'] * a['n_per_round'] * 3)} candidates screened, {a['limit']} candles)")
         return f"freeze→forward-test capstone on {a['symbol']} {a['timeframe']} ({a['limit']} candles)"
 
     @staticmethod
@@ -471,8 +471,12 @@ class MLEngineerAgent:
         if name == "run_dag_search":
             best = r.get("best") or {}
             sk = best.get("crps_skill")
-            return (f"Ran DAG search on {r.get('symbol')} (data: {r.get('source')}, "
-                    f"{r.get('n_candles')} candles). Best: combiner={best.get('combiner')}, "
+            ladder = r.get("rung_ladder") or []
+            ladder_str = " → ".join(str(rung.get("evaluated")) for rung in ladder) if ladder else "n/a"
+            return (f"Ran a Hyperband DAG search on {r.get('symbol')} (data: {r.get('source')}, "
+                    f"{r.get('n_candles')} candles). Screened ~{r.get('candidates')} candidates in "
+                    f"{r.get('evaluations')} budgeted evaluations (rung ladder: {ladder_str}). "
+                    f"Best: combiner={best.get('combiner')}, "
                     f"CRPS-skill={None if sk is None else round(float(sk), 4)}. "
                     "Ask 'read the leaderboard' to see all combinations.")
         v = r.get("verdict")
@@ -483,20 +487,35 @@ class MLEngineerAgent:
     def _run_dag_search(self, symbol="BTC/USD", timeframe="1h", limit=400,
                         exchange="kraken", prefer_live=True,
                         rounds=2, n_per_round=4) -> Dict[str, Any]:
-        """Operator action: load a symbol and drive a real Stacked-DAG search,
-        recording to the PERSISTENT leaderboard so the chat's ``read_leaderboard``
-        sees it afterward."""
+        """Operator action: load a symbol and drive a real Stacked-DAG search via
+        the W1 budget-aware scheduler (Hyperband / Successive-Halving) — screen many
+        candidates cheaply, refine survivors at full budget — recording the winners
+        to the PERSISTENT leaderboard so the chat's ``read_leaderboard`` sees them.
+        ``rounds×n_per_round`` sets the candidate budget."""
         from ..adapters.crypto import load_symbol
         from ..leaderboard import Leaderboard
+        from ..search import DAGSearch
         d = load_symbol(symbol, timeframe, limit, exchange, prefer_live=prefer_live)
         lb = Leaderboard()                                   # on-disk → read_leaderboard sees it
+        # Keep an interactive chat-triggered run light on this single-CPU box: ~9
+        # candidates, one bracket, a light step-ladder. (Bigger sweeps belong to the
+        # autonomous loop / the future W2 compute manager + parallelism.)
+        max_configs = min(9, max(self._WRITE_MIN_CONFIGS, int(rounds) * int(n_per_round)))
         try:
-            best = self.plan_dag_search(d["matrix"], rounds=rounds, n_per_round=n_per_round,
-                                        dataset_id=symbol, leaderboard=lb)
+            search = DAGSearch(d["matrix"], leaderboard=lb, dataset_id=symbol,
+                               max_base=3, min_train=40, n_samples=30, seed=0)
+            report = search.hyperband_search(max_configs=max_configs, eta=3, n_brackets=1,
+                                             rungs=[(20, 10), (45, 20), (80, 30)])
+            best = report.get("best")
         finally:
             lb.close()
+        ladder = (report.get("brackets") or [{}])[0].get("rungs") if report else None
         return {"symbol": symbol, "timeframe": timeframe, "source": d["source"],
-                "n_candles": d["n_candles"], "best": best}
+                "n_candles": d["n_candles"], "best": best,
+                "method": "hyperband", "evaluations": (report or {}).get("total_evaluations"),
+                "rung_ladder": ladder, "candidates": max_configs}
+
+    _WRITE_MIN_CONFIGS = 9                                # floor for the Hyperband candidate pool
 
     def _run_capstone(self, symbol="BTC/USD", timeframe="1h", limit=400,
                       exchange="kraken", prefer_live=True) -> Dict[str, Any]:

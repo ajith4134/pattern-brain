@@ -117,16 +117,21 @@ class DAGSearch:
 
     # ------------------------------------------- budgeted scoring (W1 Hyperband)
     def score_spec_budgeted(self, spec: DAGSpec, frac: float = 1.0,
+                            steps: Optional[int] = None,
                             n_samples: Optional[int] = None,
                             record: bool = False) -> Dict[str, object]:
-        """Score a spec at a RESOURCE BUDGET: ``frac`` of the data window and
-        ``n_samples`` MC samples (PLAN §17.1 W1). A small budget = a cheap, rough
-        screen; ``frac=1.0`` = the full, accurate score. Only records to the
-        leaderboard when ``record=True`` (the final rung) so cheap screening
-        passes don't pollute the persisted leaderboard."""
+        """Score a spec at a RESOURCE BUDGET (PLAN §17.1 W1). The budget caps cost
+        two ways: ``n_samples`` (MC samples) and EITHER ``steps`` (score only the
+        most-recent N forecast steps — the dominant cost driver, so this is the main
+        knob) OR ``frac`` (a fraction of the full data window). A small budget = a
+        cheap, rough screen; the top rung uses the full data. Records to the
+        leaderboard only when ``record=True`` (final rung) so screening passes don't
+        pollute it."""
         ns = int(n_samples or self.n_samples)
         T = len(self.X)
-        if frac >= 1.0:
+        if steps is not None:                                 # cap forecast STEPS (cost driver)
+            Xw = self.X[-(self.min_train + max(12, int(steps))):]
+        elif frac >= 1.0:
             Xw = self.X
         else:
             win = max(self.min_train + 12, int(frac * T))     # keep ≥~12 forecast steps
@@ -145,13 +150,17 @@ class DAGSearch:
             self._seen.add(spec.signature())
         return score
 
-    def hyperband_search(self, max_configs: int = 27, eta: int = 3) -> Optional[Dict]:
+    def hyperband_search(self, max_configs: int = 27, eta: int = 3,
+                         rungs=None, n_brackets: int = 2) -> Optional[Dict]:
         """Budget-aware smart search (Successive Halving / Hyperband, PLAN §17.1
         W1): screen many candidates cheaply, refine only survivors at full budget.
-        Returns the Hyperband report; the best spec is also on the leaderboard."""
+        ``rungs`` = optional ``[(steps, n_samples), ...]`` ladder (lighter ladders
+        keep an interactive run fast). Returns the Hyperband report; the best spec
+        is also on the leaderboard."""
         from .scheduler import Hyperband
         self._budget = max(self._budget, max_configs)
-        return Hyperband(self, eta=eta, seed=self.seed).run(max_configs=max_configs)
+        return Hyperband(self, eta=eta, rungs=rungs, seed=self.seed).run(
+            max_configs=max_configs, n_brackets=n_brackets)
 
     # -------------------------------------------------------------- strategies
     def random_search(self, n: int = 10) -> Optional[Dict]:
