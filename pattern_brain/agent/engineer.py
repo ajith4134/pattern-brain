@@ -293,6 +293,24 @@ class MLEngineerAgent:
                 "llm": self.llm_chat is not None, "feed_len": len(self.feed)}
 
     # ----------------------------------------------------------- conversation
+    def plan_dag_search(self, X, rounds: int = 2, n_per_round: int = 4,
+                        base_pool=None, dataset_id: str = "agent_dag", **search_kw):
+        """Phase-8 slice 8: drive the Stacked-DAG search with THIS agent's LLM as the
+        experiment planner (controller, never scorer). The LLM proposes DAG
+        combinations from the leaderboard; ``DAGSearch`` + the ``Evaluator`` score
+        them. Works offline (heuristic proposer). Returns the best DAG found."""
+        from ..search import DAGSearch
+        from .planner import DAGPlanner
+        search = DAGSearch(X, base_pool=base_pool, dataset_id=dataset_id, **search_kw)
+        best = DAGPlanner(search, llm_chat=self.llm_chat).plan_and_search(
+            rounds=rounds, n_per_round=n_per_round)
+        skill = (best or {}).get("crps_skill")
+        self.toolbox.remember(
+            f"DAG search: best CRPS-skill={None if skill is None else round(float(skill), 4)} "
+            f"({(best or {}).get('combiner')}), {search.lb.count()} nets tried",
+            kind="dag_search")
+        return best
+
     def chat(self, message: str, history: Optional[List[Dict[str, str]]] = None) -> str:
         """Converse with the agent (ENG-4). Works offline (templated reply) or via
         an injected LLM text-completer, grounded in live state + retrieved knowledge."""

@@ -48,6 +48,10 @@ class DAGSpec:
     def to_dict(self) -> Dict[str, object]:
         return {"layers": [list(l) for l in self.layers], "combiner": self.combiner}
 
+    @classmethod
+    def from_dict(cls, d: Dict[str, object]) -> "DAGSpec":
+        return cls(layers=[list(l) for l in d["layers"]], combiner=d.get("combiner", "mixture"))
+
     def signature(self) -> str:
         return json.dumps(self.to_dict(), sort_keys=True)
 
