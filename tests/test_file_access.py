@@ -81,6 +81,30 @@ def test_chat_blocks_nonread_tools():
     print("  chat is read-only: mutating tools refused (only file/state reads allowed)")
 
 
+def test_runtime_result_tools():
+    """The chat can read live RESULTS (leaderboard / capstone), not just files."""
+    tb = Toolbox()
+    lb = tb.read_leaderboard()
+    check(isinstance(lb, dict) and ("summary" in lb or "n_runs" in lb), "read_leaderboard malformed")
+    cap = tb.read_capstone()
+    check(isinstance(cap, dict), "read_capstone should return a dict")
+    # both dispatch via the tool-call interface the ReAct loop uses
+    check(isinstance(tb.call("read_leaderboard"), dict), "read_leaderboard not callable via .call")
+    print(f"  runtime tools: read_leaderboard ({'populated' if 'summary' in lb else 'empty'}) + read_capstone OK")
+
+
+def test_chat_transcript_cached_and_recalled():
+    """Idea 3: each Q&A is cached to archival memory and recalled later."""
+    agent = MLEngineerAgent(llm_chat=lambda msgs: "The stacked combiner won because it had the best DSR.")
+    agent.ensure_books = lambda *a, **k: None
+    q = "why did the search pick the stacked combiner today"
+    agent.chat(q)
+    recalls = agent.toolbox.recall_memory("which combiner won the search", k=5)
+    check(any("stacked combiner won" in str(r) for r in recalls),
+          "the Q&A should be cached to memory and recalled on a similar question")
+    print(f"  transcript caching: prior answer recalled on a similar question ({len(recalls)} hits)")
+
+
 def main():
     print("=" * 70)
     print("Pattern Brain — LLM file access: tests")
@@ -89,6 +113,8 @@ def main():
     test_rule1_guard()
     test_chat_reads_files_react_loop()
     test_chat_blocks_nonread_tools()
+    test_runtime_result_tools()
+    test_chat_transcript_cached_and_recalled()
     print("=" * 70)
     if FAILS:
         print(f"FAILED: {len(FAILS)} check(s):")

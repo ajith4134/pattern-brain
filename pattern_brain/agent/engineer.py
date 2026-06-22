@@ -311,15 +311,17 @@ class MLEngineerAgent:
             kind="dag_search")
         return best
 
-    #: read-only tools the chat LLM may call (full file access; no mutate/web in chat)
+    #: read-only tools the chat LLM may call — full file access + live RESULTS
+    #: (leaderboard, capstone, state) so it reasons over code AND runtime; no mutate/web.
     _CHAT_TOOLS = ("list_files", "read_file", "search_files", "observe_state",
-                   "retrieve_knowledge", "recall_memory")
+                   "retrieve_knowledge", "recall_memory", "read_leaderboard", "read_capstone")
 
     def chat(self, message: str, history: Optional[List[Dict[str, str]]] = None,
              max_tool_calls: int = 6) -> str:
-        """Converse with the agent like a coding assistant — with FULL READ ACCESS to
-        the project files. A ReAct loop lets the LLM read/search the codebase before
-        answering (works with any text completer). Offline → templated reply."""
+        """Converse like a coding assistant — FULL READ ACCESS to the project files AND
+        the live results (search leaderboard, capstone forward-test, bank state). A
+        ReAct loop lets the LLM read/search before answering; each Q&A is cached to
+        archival memory and recalled on similar questions. Offline → templated reply."""
         self.ensure_books()
         observe = self.toolbox.observe_state()
         kn = self.toolbox.retrieve_knowledge(message, k=3)
@@ -327,25 +329,31 @@ class MLEngineerAgent:
         if self.llm_chat is None:
             return self._templated_reply(message, observe, kn, recalls)
         tools_help = (
-            "You have FULL READ ACCESS to this project's files. To use a tool, reply with ONLY a "
-            "single JSON object on one line and NOTHING else:\n"
-            '{"tool":"list_files","pattern":"**/*.py"}\n'
+            "You have FULL READ ACCESS to this project's files AND its live results. To use a tool, reply "
+            "with ONLY a single JSON object on one line and NOTHING else:\n"
             '{"tool":"read_file","path":"pattern_brain/network.py"}\n'
             '{"tool":"search_files","query":"def run_capstone"}\n'
-            '{"tool":"observe_state"}\n'
-            "I will reply with the tool result; then use another tool or give your FINAL ANSWER as "
-            "plain prose (no JSON). READ THE REAL CODE before answering questions about how it works.")
+            '{"tool":"list_files","pattern":"**/*.py"}\n'
+            '{"tool":"read_leaderboard"}   — which network combinations (mixture/stacked/gated) scored best\n'
+            '{"tool":"read_capstone"}      — the latest freeze->forward-test verdict + metrics\n'
+            '{"tool":"observe_state"}      — current bank/reputation state\n'
+            "I will reply with the tool result; then use another tool or give your FINAL ANSWER as plain "
+            "prose (no JSON). To answer 'why did the search pick X', READ the leaderboard first; to explain "
+            "HOW something works, READ the real code first.")
         sys = (PERSONA + "\nYou are the ML Engineer for the Pattern Brain project (a network-of-models "
                "that forecasts return distributions). Answer concretely, citing files/nodes/numbers.\n"
-               f"Live state: {json.dumps(observe)[:1100]}\n"
-               f"Retrieved knowledge: {json.dumps(kn)[:700]}\n" + tools_help)
+               f"Live state: {json.dumps(observe)[:1000]}\n"
+               f"Retrieved knowledge: {json.dumps(kn)[:600]}\n"
+               f"Your past answers (reuse if they fit): {json.dumps(recalls)[:700]}\n" + tools_help)
         convo = [{"role": "system", "content": sys}] + (history or []) + \
                 [{"role": "user", "content": message}]
+        answer = None
         for _ in range(max(1, max_tool_calls)):
             reply = self.llm_chat(convo)
             action = self._parse_tool(reply)
             if action is None:
-                return reply                                 # final prose answer
+                answer = reply
+                break
             name = action.get("tool")
             if name not in self._CHAT_TOOLS:
                 result = {"error": f"{name!r} not available in chat (read-only): {list(self._CHAT_TOOLS)}"}
@@ -356,8 +364,14 @@ class MLEngineerAgent:
                     result = {"error": str(e)}
             convo.append({"role": "assistant", "content": reply})
             convo.append({"role": "user", "content": f"TOOL RESULT [{name}]:\n{json.dumps(result)[:6500]}"})
-        convo.append({"role": "user", "content": "Now give your final answer in plain prose."})
-        return self.llm_chat(convo)
+        if answer is None:
+            convo.append({"role": "user", "content": "Now give your final answer in plain prose."})
+            answer = self.llm_chat(convo)
+        try:                                                 # cache the Q&A (builds project knowledge)
+            self.toolbox.remember(f"Q: {message}\nA: {answer}", kind="chat_qa")
+        except Exception:
+            pass
+        return answer
 
     @staticmethod
     def _parse_tool(reply: str):

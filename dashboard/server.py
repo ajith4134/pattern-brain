@@ -455,10 +455,20 @@ def _capstone_payload() -> dict:
     for t in range(1, n):
         r[t] = 0.55 * r[t - 1] + rng.normal(scale=0.4)
     X = np.column_stack([r, np.cumsum(r), rng.normal(size=n)])
-    return run_capstone(X, holdout_frac=0.3, strategy="random", budget=6,
-                        base_pool=["drift_forecast", "theta_forecast", "naive_mean_forecast"],
-                        min_train=45, n_samples=80, seed=0, return_paths=True,
-                        meta={"symbol": "DEMO/AR1", "source": "synthetic", "target": "return"})
+    rep = run_capstone(X, holdout_frac=0.3, strategy="random", budget=6,
+                       base_pool=["drift_forecast", "theta_forecast", "naive_mean_forecast"],
+                       min_train=45, n_samples=80, seed=0, return_paths=True,
+                       meta={"symbol": "DEMO/AR1", "source": "synthetic", "target": "return"})
+    try:                                                # persist so the chat's read_capstone tool can see it
+        import json as _json
+        os.makedirs(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                 "agent_state"), exist_ok=True)
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                               "agent_state", "last_capstone.json"), "w") as fh:
+            _json.dump(rep, fh)
+    except Exception:
+        pass
+    return rep
 
 
 @app.get("/api/capstone")

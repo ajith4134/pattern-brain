@@ -239,6 +239,42 @@ class Toolbox:
                 continue
         return out
 
+    # ------------------------------------------------ runtime results (read-only)
+    def read_leaderboard(self, k: int = 12, metric: str = "crps_skill") -> Dict[str, Any]:
+        """The Stacked-DAG search leaderboard — which network combinations scored best
+        (so the LLM can answer 'why did the search pick X?'). Reads the persistent db."""
+        from ..leaderboard import Leaderboard
+        lb = Leaderboard()
+        try:
+            summary = lb.summary()
+            if summary["n_runs"] == 0:
+                return {"n_runs": 0, "note": "no search persisted yet — run a DAG search to populate it"}
+            metric = metric if metric in ("crps_skill", "dsr", "mean_crps") else "crps_skill"
+            top = [{c: r.get(c) for c in ("combiner", "n_nodes", "crps_skill", "dsr",
+                                          "mean_crps", "calibrated")} for r in lb.top(k, metric=metric)]
+            per = {}
+            for r in lb.top(300, metric="crps_skill", dedupe=False):
+                c = r["combiner"]
+                if c not in per or (r["crps_skill"] or -9) > (per[c]["crps_skill"] or -9):
+                    per[c] = {"combiner": c, "crps_skill": r["crps_skill"], "dsr": r["dsr"],
+                              "mean_crps": r["mean_crps"], "calibrated": bool(r["calibrated"])}
+            return {"summary": summary, "top": top, "best_per_combiner": list(per.values())}
+        finally:
+            lb.close()
+
+    def read_capstone(self) -> Dict[str, Any]:
+        """The latest freeze→forward-test result (verdict, forward-skill, DSR,
+        calibration, directional hit, next move), if one has been computed."""
+        p = os.path.join(PROJECT_ROOT, "agent_state", "last_capstone.json")
+        if not os.path.exists(p):
+            return {"note": "no capstone result yet — open the Capstone dashboard tab or run run_crypto_capstone"}
+        try:
+            with open(p) as fh:
+                d = json.load(fh)
+            return {k: v for k, v in d.items() if k != "forward_paths"}
+        except Exception as e:
+            return {"error": str(e)}
+
     # ----------------------------------------------- create / mutate (1/2/3)
     def evolver_for(self, feature: str, **kw):
         if feature not in _EVOLVERS:
@@ -320,6 +356,8 @@ class Toolbox:
                  {"path": {"type": "string"}}),
             spec("search_files", "Search the project code for a substring (grep-like).",
                  {"query": {"type": "string"}, "pattern": {"type": "string"}}),
+            spec("read_leaderboard", "The DAG-search leaderboard: which network combinations scored best."),
+            spec("read_capstone", "The latest freeze->forward-test result (verdict, skill, DSR, calibration)."),
         ]
 
     def call(self, name: str, **kw) -> Any:
