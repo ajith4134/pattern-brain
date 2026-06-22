@@ -1,0 +1,4 @@
+# Phase-8 capstone (PLAN.md §12.1, owner-approved 2026-06-22) — crypto data.
+# Optional: adapters/crypto.py falls back to a synthetic series without it.
+# Multi-exchange (Kraken/Binance.US/Bybit/Coinbase), routes around US geo-blocks.
+ccxt>=4.0

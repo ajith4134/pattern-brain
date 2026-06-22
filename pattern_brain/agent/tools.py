@@ -175,6 +175,18 @@ class Toolbox:
         np.savez(path, X=X)
         return {"source": source, "name": name, "shape": list(X.shape), "path": path, "X": X}
 
+    def fetch_crypto_symbol(self, symbol: str = "BTC/USD", timeframe: str = "1h",
+                            limit: int = 600, exchange: str = "kraken",
+                            prefer_live: bool = True) -> Dict[str, Any]:
+        """Acquire ALL the market data for one crypto symbol → a generic (T, D)
+        (column 0 = log-return). Live via ccxt, cached under ``data/crypto/`` (Rule 1),
+        synthetic fallback offline. The LLM-orchestrated capstone data step (§12.1)."""
+        from ..adapters.crypto import load_symbol
+        d = load_symbol(symbol, timeframe, limit, exchange, prefer_live=prefer_live)
+        return {"symbol": symbol, "source": d["source"], "n_candles": d["n_candles"],
+                "shape": list(d["matrix"].shape), "feature_names": d["feature_names"],
+                "last_close": d["last_close"], "X": d["matrix"]}
+
     # ----------------------------------------------- create / mutate (1/2/3)
     def evolver_for(self, feature: str, **kw):
         if feature not in _EVOLVERS:
@@ -242,6 +254,9 @@ class Toolbox:
                  {"note": {"type": "string"}, "kind": {"type": "string"}}),
             spec("fetch_dataset", "Acquire a generic (T,D) training dataset.",
                  {"name": {"type": "string"}, "source": {"type": "string"}}),
+            spec("fetch_crypto_symbol", "Acquire all market data for one crypto symbol "
+                 "as a generic (T,D) (ccxt live, cached, synthetic fallback).",
+                 {"symbol": {"type": "string"}, "timeframe": {"type": "string"}}),
             spec("web_fetch", "Fetch text from a URL (internet).", {"url": {"type": "string"}}),
             spec("run_evolution", "Create/mutate models (feature1), algorithms (feature2) or "
                  "pathways (feature3); gated by the Evaluator.",

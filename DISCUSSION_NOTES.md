@@ -1476,3 +1476,23 @@ DECISION recorded in PLAN §12.2 (the hybrid): typed Belief = canonical (Option 
 Status: decision made + recorded; no code built this turn (owner paused build). Slice 1 (scoring.py) remains the last built artifact. Next: resume Phase-8 slice 2 (encoder adapters) on owner go-ahead, with belief_features.py now an explicit slice-4 deliverable.
 
 Rules applied: 1, 2, 4, 5, 10, 13, 14, 16, 20, 21, 22, 23, 26.
+
+---
+
+## 2026-06-22 — 🏁 CAPSTONE DELIVERED + Phase 8 COMPLETE (run on LIVE BTC/USD)
+
+Built slice 9 (the whole-project acceptance test) and ran it on real market data.
+- `pattern_brain/capstone.py` (domain-agnostic, Rule 23): `run_capstone(matrix)` = SEARCH/SELECT best Stacked-DAG on HISTORY only → FREEZE → FORWARD-TEST the frozen net on the unseen holdout → CRPS + PIT-calibration + directional hit-rate vs persistence, DSR-deflated by the search budget → verdict; plus the actual next-move distribution + price estimate.
+- `pattern_brain/adapters/crypto.py` (domain home): ccxt live fetch (installed), synthetic fallback, live pulls cached under data/crypto/ (Rule 1), col0 = log-return = the next-move target, `run_crypto_capstone` wrapper. `fetch_crypto_symbol` agent tool (the project's LLM orchestrates acquisition, owner's ask).
+- requirements-crypto.txt (ccxt). Tests green both interpreters; live ccxt path verified.
+
+LIVE result (Kraken BTC/USD 1h, 446 candles, 312 hist / 134 holdout, frozen mixture[holt_linear,theta,drift]):
+- forward (OOS) CRPS-skill = **0.208** over persistence, DSR = **0.999** (significant even deflated by 9 nets), PIT-calibrated (KS 0.11) → verdict **PASS**.
+- directional hit-rate = **0.50** = baseline = **CHANCE**.
+- next move ≈ +0.1% (P_up 0.57), next-price-est ≈ $64,126 from $64,058.
+
+HONEST READ (Rule 10, no overselling): the PASS is on DISTRIBUTIONAL/uncertainty accuracy — the frozen net forecasts the next-return *distribution* (spread/vol) better-calibrated than a static-spread persistence baseline — NOT on direction (at chance). The system models uncertainty, not direction, on ~efficient 1h crypto. That is exactly the truthful result a rigorous freeze→forward-test should surface, and the whole anti-overfit apparatus (purged history selection, freeze, DSR deflation, PIT) is what makes that 0.208/0.999 trustworthy rather than a backtest illusion. Caveat: single symbol/window + the CRPS skill largely reflects better vol calibration vs a weak static baseline; multi-symbol/regime repetition is the documented robustness extension.
+
+PHASE 8 COMPLETE: the owner's vision (wire models into a network, feed raw data, score vs the live market, search the best combination, predict the next move) is realized end-to-end and verified on live data. PLAN §13 records the status. Next = owner's call (multi-symbol robustness, richer data columns, Capstone dashboard tab, or Phase 9 MoE gate).
+
+Rules applied: 1, 2, 4, 10, 18, 19, 20, 21, 22, 23, 24, 25, 26.
