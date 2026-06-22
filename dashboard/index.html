@@ -628,28 +628,60 @@ function CapstoneView() {
   </div></div>`;
 }
 
+// Full-bank view: ALL modules in their 8 functional-layer columns + the allowed
+// forward (layer-adjacent) connections — the whole "brain" / search space.
+const _LAYER_ORDER = ["signal","noise","pattern","sequence","probability","equation","decision","rl"];
+function bankFlow(bankNodes) {
+  const byLayer = {};
+  (bankNodes || []).forEach(n => { (byLayer[n.layer] = byLayer[n.layer] || []).push(n); });
+  const layers = _LAYER_ORDER.filter(l => byLayer[l]).concat(Object.keys(byLayer).filter(l => !_LAYER_ORDER.includes(l)));
+  const nodes = [], edges = [];
+  layers.forEach((l, li) => byLayer[l].forEach((n, ni) => {
+    nodes.push({ id: n.node_type, position: { x: li*240, y: ni*30 },
+      data: { label: n.node_type }, style: { ...nodeStyle(l, false), fontSize: "8px", width: 158, padding: "2px 5px" },
+      sourcePosition: "right", targetPosition: "left" });
+  }));
+  for (let li = 0; li < layers.length - 1; li++) {
+    const cur = byLayer[layers[li]], nxt = byLayer[layers[li+1]];
+    cur.forEach((n, ni) => { for (let j = 0; j < 2; j++) {
+      const t = nxt[(ni + j) % nxt.length];
+      edges.push({ id: `${n.node_type}>${t.node_type}.${j}`, source: n.node_type, target: t.node_type,
+        style: { stroke: color(layers[li]), strokeWidth: 0.5, opacity: 0.22 } });
+    }});
+  }
+  return { nodes, edges };
+}
+
 function NetworkView() {
   const [d, setD] = useState(null);
   const [sel, setSel] = useState(0);
+  const [mode, setMode] = useState("winner");
+  const [bank, setBank] = useState(null);
   useEffect(() => { fetch("/api/leaderboard").then(r => r.json()).then(setD).catch(()=>{}); }, []);
+  useEffect(() => { if (mode === "bank" && !bank) fetch("/api/bank").then(r => r.json()).then(setBank).catch(()=>{}); }, [mode]);
   if (!d) return html`<div class="wrap"><div class="card"><h2>🏆 Network</h2>
     <div class="body"><span class="sub">scoring DAGs…</span></div></div></div>`;
   const s = d.summary || {}, top = d.top || [];
   const spec = top.length ? JSON.parse(top[Math.min(sel, top.length-1)].spec_json) : null;
-  const flow = spec ? dagFlow(spec) : { nodes: [], edges: [] };
+  const flow = mode === "bank" ? (bank ? bankFlow(bank.nodes) : { nodes: [], edges: [] })
+                               : (spec ? dagFlow(spec) : { nodes: [], edges: [] });
   return html`<div class="wrap"><div class="col" style=${{ flex: 1 }}>
     <div class="card">
-      <h2>🧠 The network — how the model modules interconnect ${d.demo ? html`<span class="sub">(demo data)</span>` : ""}</h2>
+      <h2>🧠 The network — how the model modules interconnect</h2>
       <div class="body">
-        <span class="sub">The winning Stacked-DAG #${Math.min(sel,top.length-1)+1}: raw data flows into the base ML
-        modules (the "spheres"), whose outputs feed the ${spec ? spec.combiner : ""} combiner, which emits the final
-        predictive distribution. Click a leaderboard row to draw a different network.</span>
-        <div id="dag" style=${{ height: "340px", border: "1px solid var(--line)", borderRadius: "8px", marginTop: "8px" }}>
-          ${spec ? html`<${ReactFlow} nodes=${flow.nodes} edges=${flow.edges} fitView
-              proOptions=${{ hideAttribution: true }} nodesDraggable=${false} nodesConnectable=${false}>
+        <div style=${{ display: "flex", gap: "6px", marginBottom: "8px" }}>
+          <button class=${"tab" + (mode==="winner" ? " active" : "")} onClick=${() => setMode("winner")}>winning network</button>
+          <button class=${"tab" + (mode==="bank" ? " active" : "")} onClick=${() => setMode("bank")}>full bank — all ${bank ? bank.n_nodes : "190+"} modules</button>
+        </div>
+        <span class="sub">${mode === "bank"
+          ? html`All ${bank ? bank.n_nodes : ""} ML modules in their 8 functional layers (left→right: signal → noise → pattern → sequence → probability → equation → decision → rl) with the allowed forward connections — the whole "brain" / search space. The system does NOT fuse all modules into one predictor (that would massively overfit); it SEARCHES this space and selects the small winning sub-network (see "winning network").`
+          : html`The winning Stacked-DAG #${Math.min(sel,top.length-1)+1}: raw data → base ML modules → ${spec ? spec.combiner : ""} combiner → predictive distribution. Click a leaderboard row to draw a different net.`}</span>
+        <div id="dag" style=${{ height: "420px", border: "1px solid var(--line)", borderRadius: "8px", marginTop: "8px" }}>
+          ${flow.nodes.length ? html`<${ReactFlow} nodes=${flow.nodes} edges=${flow.edges} fitView
+              proOptions=${{ hideAttribution: true }} nodesDraggable=${false} nodesConnectable=${false} minZoom=${0.05}>
               <${Background} color="#26314f" gap=${20} />
               <${Controls} showInteractive=${false} />
-            <//>` : html`<div class="body"><span class="sub">no network yet — run the search.</span></div>`}
+            <//>` : html`<div class="body"><span class="sub">${mode==="bank" ? "loading all modules…" : "no network yet — run the search."}</span></div>`}
         </div>
       </div>
     </div>
