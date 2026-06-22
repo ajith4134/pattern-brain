@@ -83,6 +83,28 @@ def test_dag_is_leakage_safe():
     print(f"  causality: DAG predictions at t≤145 unchanged by future perturbation")
 
 
+def test_gated_combiner_moe_regime():
+    """Phase-9 MoE regime-gate: the 'gated' combiner runs end-to-end, is leakage-safe,
+    and produces a valid scored distribution (weights modules by recent accuracy in
+    the current volatility regime)."""
+    X = _ar_series(220, 5)
+    spec = DAGSpec(layers=[["drift_forecast", "theta_forecast", "naive_mean_forecast"]],
+                   combiner="gated")
+    dag = StackedDAG(spec, min_train=40, n_samples=100, seed=0)
+    s = dag.score(X)
+    check(s["n"] > 0 and np.isfinite(s["mean_crps"]) and np.isfinite(s["crps_skill"]),
+          "gated combiner did not score")
+    # leakage-safe: perturbing the future leaves earlier predictions identical
+    f1 = dag.run(X)
+    X2 = X.copy(); X2[150:] += 30.0
+    f2 = dag.run(X2)
+    early = f1.index < 145
+    check(np.allclose(f1.point[early], f2.point[early], atol=0, rtol=0),
+          "LOOK-AHEAD: gated combiner peeked at the future")
+    print(f"  gated (MoE regime-gate): crps={s['mean_crps']:.3f}, skill={s['crps_skill']:.3f}, "
+          f"calibrated={s['calibrated']}, leakage-safe")
+
+
 def test_dagspec_serializable():
     spec = DAGSpec(layers=[["a", "b"], ["c"]], combiner="stacked")
     import json
@@ -100,6 +122,7 @@ def main():
     test_both_combiners_score()
     test_models_feed_models_augmentation()
     test_dag_is_leakage_safe()
+    test_gated_combiner_moe_regime()
     test_dagspec_serializable()
     print("=" * 70)
     if FAILS:

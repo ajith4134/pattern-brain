@@ -37,7 +37,7 @@ except Exception:                                       # pragma: no cover - opt
 
 DEFAULT_POOL = ["drift_forecast", "theta_forecast", "naive_mean_forecast",
                 "holt_linear_forecast", "svr_forecast", "rf_forecast"]
-COMBINERS = ["mixture", "stacked"]
+COMBINERS = ["mixture", "stacked", "gated"]   # "gated" = Phase-9 MoE regime-gate
 
 
 def optuna_available() -> bool:

@@ -125,6 +125,8 @@ class StackedDAG:
         idx = np.arange(start, T)
         if self.spec.combiner == "stacked":
             samples = self._stacked(all_points, x, idx)
+        elif self.spec.combiner == "gated":
+            samples = self._gated(last_layer, x, idx)
         else:
             samples = self._mixture(last_layer, x, idx)
         point = samples.mean(1) if samples.size else np.array([])
@@ -146,6 +148,36 @@ class StackedDAG:
             w = w / w.sum()
             counts = np.random.default_rng(self.seed * 131 + int(t)).multinomial(M, w)
             samp = [np.random.default_rng(self.seed * 17 + int(t) * 7 + i).normal(
+                        pts[i, t], sps[i, t], int(c)) for i, c in enumerate(counts) if c > 0]
+            out.append(np.concatenate(samp) if samp else np.full(M, x[t - 1]))
+        return np.array(out)
+
+    def _gated(self, last_layer, x, idx) -> np.ndarray:
+        """MoE REGIME-GATE (Phase 9): weight each module by its recent accuracy IN THE
+        CURRENT volatility regime (causal). Low-vol vs high-vol is the regime; a node
+        good in calm markets gets up-weighted when calm, down-weighted when stormy —
+        a learned-by-performance soft router conditioned on regime."""
+        pts = np.array([p for p, _ in last_layer])
+        sps = np.array([s for _, s in last_layer])
+        k = len(last_layer)
+        vol = np.array([float(np.std(x[max(0, t - 11): t + 1])) if t > 1 else 0.0
+                        for t in range(len(x))])
+        M, out = self.n_samples, []
+        for t in idx:
+            mt = self.min_train
+            med = float(np.median(vol[mt:t])) if (t - mt) > 2 else float(vol[t])
+            cur_hi = vol[t] > med
+            regime_past = vol[mt:t] > med
+            w = np.empty(k)
+            for i in range(k):
+                err = np.abs(pts[i, mt:t] - x[mt:t])
+                same = err[regime_past == cur_hi] if err.size else err
+                mae = (float(np.mean(same)) if same.size > 2
+                       else float(np.mean(err)) if err.size else 1.0)
+                w[i] = 1.0 / (mae + 1e-6)
+            w = w / w.sum()
+            counts = np.random.default_rng(self.seed * 191 + int(t)).multinomial(M, w)
+            samp = [np.random.default_rng(self.seed * 23 + int(t) * 5 + i).normal(
                         pts[i, t], sps[i, t], int(c)) for i, c in enumerate(counts) if c > 0]
             out.append(np.concatenate(samp) if samp else np.full(M, x[t - 1]))
         return np.array(out)

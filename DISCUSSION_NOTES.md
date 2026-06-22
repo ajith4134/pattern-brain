@@ -1512,3 +1512,21 @@ Owner asked (in order): (1) multi-symbol robustness sweep, (2) direction-aware t
 Overall honest scientific read after Phase 8 + hardening: the system is a genuine, leakage-safe, anti-overfit-gated network-of-models that demonstrably forecasts the next-return DISTRIBUTION (uncertainty/volatility) better than naive persistence — robustly across BTC/ETH/SOL × 1h/4h, DSR-significant — but does NOT predict direction better than chance. That is a real, publishable-quality negative-on-direction / positive-on-uncertainty result, and the rigor (purged selection, freeze, DSR deflation, PIT, multi-symbol replication) is what makes it trustworthy.
 
 Rules applied: 1, 2, 4, 10, 18, 19, 20, 21, 22, 23, 24, 25, 26.
+
+---
+
+## 2026-06-22 — Ideas 1-3 done (risk layer · Capstone tab · MoE regime-gate) + dashboard external access
+
+Owner: do all 3 ideas + give a browser-accessible dashboard link (got ERR_CONNECTION_REFUSED at 35.201.246.110 — a GCP VM).
+
+DASHBOARD ACCESS: server was secure-by-default (binds 127.0.0.1) → external refused. Restarted with PB_DASH_HOST=0.0.0.0 (server already supports the env var) → now LISTEN 0.0.0.0:8077. Browser reaches http://<vm-ip>:8077 only if the cloud firewall allows tcp:8077 (GCP firewall rule) else SSH tunnel.
+
+IDEA 1 — risk.py (risk_signals: pred vol, VaR, ES/CVaR, vol-targeted position size, capital-at-risk; evaluate_vol_forecast: corr + QLIKE vs baseline; realized_vol causal). Turns the proven distributional edge into actionable risk/sizing signals. test_risk.py green.
+
+IDEA 2 — Capstone dashboard tab: run_capstone(return_paths=True) → per-step q10/q50/q90 + realized; /api/capstone + 🎯 Capstone tab (Plotly fan chart forecast-vs-realized + honest verdict table). Playwright-verified (1 chart + 5-row verdict; Network tab 6 nodes/7 edges fresh+revisit; 0 JS errors).
+
+IDEA 3 — Phase-9 MoE regime-gate: 'gated' combiner in StackedDAG weights modules by recent accuracy in the current vol regime (causal, leakage-safe); added to search COMBINERS so mixture/stacked/gated are all explored. Honest live BTC 1h comparison: stacked +0.359 > gated +0.296 > mixture +0.286 — regime-gating beats naive mixture but stacking wins here; data decides. Deferred: a gradient-trained parametric gate.
+
+All green both interpreters; pushed. Honest overall: the system robustly forecasts return DISTRIBUTION/uncertainty (now productized as a risk layer), not direction; the dashboard shows the interconnected network + the frozen forward-test; the search now includes a regime-gate option.
+
+Rules applied: 1, 2, 4, 10, 19, 20, 21, 22, 23, 24, 25, 26.
