@@ -1336,3 +1336,43 @@ Owner: "Phase 7g and always read ideas generated in the last message." Applied i
 **Next (Rule 6 — one at a time):** owner's call. Highest-leverage non-build move = run the `MLEngineerAgent` loop over the now-196-node bank so the Evaluator gate surfaces which of the new deep/physics/equation nodes actually EARN shadow status (breadth is climbing; the owner's own caveat was "breadth isn't the hard part — the connector is"). Build-wise: the easy Neural-sequence mop-up (rnn/bilstm/seq2seq) or a 7f-b3 self-supervised tier (SimCLR/BYOL/MAE).
 
 Rules applied: 1, 2, 4, 5, 7, 18, 20, 21, 22, 23, 24, 25, 26.
+
+---
+
+## 2026-06-22 — DISCUSSION (planning): connecting the 196 nodes into one network + accuracy-vs-real-data loop
+
+Owner opened a planning session (NO implementation this turn): "now we have all the nodes; we need to think how to connect them as a mess of network, how to pass the raw data input into this network, and compare the output to the real data to measure the accuracy. This is a discussion session — I will pass starting ideas/conversations next for you to get inspired and decide the plan and features."
+
+### Claude's evidence-based read (Rule 26 step 1) — MOST of this is already built (coherence intelligence)
+The owner's three asks map almost 1:1 onto code that already exists, but at SINGLE-PATHWAY scale, not whole-bank-network scale:
+- "connect them as a network" → `connector.py` (Connector v0, fixed pathway + signal-bus threading + belief stream) and `routing.py` (Connector v1 — dynamic hop-by-hop Router/HeuristicRouter/LLMRouter/RoutedConnector). The belief INTERLINGUA (`interlingua.py`) is the typed edge contract.
+- "pass raw data in" → `adapters/` (raw OHLCV → generic (T,D)); the core consumes (T,D) (Rule 23).
+- "compare output to real data / measure accuracy" → `evaluator.py` (5-layer: purged walk-forward + PSR/DSR/minTRL + discounted-UCB + NSGA-II/CSCV-PBO + anchors) — this IS the accuracy meter. `reputation.py` (PathwayReputation, discounted-UCB) is the feedback. `evolution.py::PathwayEvolver` already evolves pathway topology gated by the Evaluator.
+
+**The real GAP** = going from "pick/score ONE pathway" → "the WHOLE 196-node bank as one interconnected, accuracy-trained network (the owner's 'mess')." That is exactly the Connector Intelligence v2 the PLAN deferred (MoE/GNN routing) because it needed routing-outcome training data that didn't exist — which we can NOW generate by running + scoring the bank.
+
+### The design space (generate → critique → rank), all kept domain-agnostic (Rule 23)
+- **A — Layered STACKED model-graph (stacked generalization, Wolpert 1992, modernized).** All nodes run on the (T,D) bus + upstream beliefs, organized by the 8 functional layers; a trained meta-combiner (decision layer) fuses everything into the one-step prediction; accuracy = walk-forward (Evaluator). *Critique:* buildable NOW from existing parts; the canonical pitfall is garbage/redundant nodes diluting signal + overfitting from 196 inputs → MUST be accuracy-weighted/sparsified and purged-WF gated (the Evaluator's DSR/CSCV exist precisely for this). Strongest first step because it GENERATES the outcome data B and C need.
+- **B — MoE / learned gating router (Connector v2).** A gate routes each input (per regime) to a sparse top-k subset of expert nodes; gate trained on the outcome data A produces. *Critique:* the principled long-term answer (2025 SOTA: HMoE, Time-MoE, N-BEATS-MoE, expert-choice routing), efficient (only relevant experts fire), but needs the bootstrap data → builds ON A, not before it.
+- **C — Evolved DAG topology (NAS over the model graph).** Generalize PathwayEvolver from a chain to a multi-branch DAG; Evaluator = fitness. *Critique:* machinery exists; full-dense-DAG search space is huge + overfit-prone → best as a topology-search layer ON TOP of A/B, phase 3, with CSCV/PBO guards.
+- **D — Differentiable model-graph (DARTS over the bank).** *Critique:* REJECT for the whole bank — most nodes are sklearn/numpy, non-differentiable, so backprop-through-graph is impossible; only viable on the torch sub-graph later. Feasibility killer in general.
+
+**Ranking (pairwise) for the FIRST build: A > B > C > D.** A is the substrate everything else needs.
+
+### The pivotal decision that shapes EVERYTHING (Rule 13): define the OUTPUT/target
+"Compare output to real data" requires a defined target. Options: (1) one-step next-value/return forecast (point), (2) directional up/down (classification), (3) full predictive distribution (calibrated), (4) a trade decision / P&L. Claude's recommendation (Rule 10): start with **one-step-ahead return of feature-0, scored on BOTH directional hit-rate AND calibrated error**, because it's an unambiguous output-vs-reality signal, domain-agnostic (Rule 23, works on any (T,D)), and the Evaluator already does walk-forward outcome scoring. Distribution/P&L come later.
+
+### Claude's recommended phasing (PROPOSED, not decided — awaiting owner's seed ideas)
+- Phase 8 = "The Network" substrate: layered stacked accuracy-scored model-graph (A) — reuses connector/reputation/evaluator/adapter, does NOT rebuild them.
+- Phase 9 = MoE gate (Connector v2, option B) trained on Phase-8 outcome data.
+- Phase 10 = evolved DAG topology (C) on top.
+
+### Open questions parked for the owner (Rule 15 — ask, don't guess)
+1. Target/output definition (above) — the #1 fork.
+2. Dense (all nodes fire every step) vs sparse (gated top-k)? Compute vs coverage.
+3. Static vs learned/evolved topology — and is "the mess" literally all-to-all, or layered+gated?
+4. Accuracy metric: point error (RMSE) vs directional hit-rate vs calibration (Brier/logloss) vs trading P&L.
+
+Owner will feed seed ideas/conversations next; Claude to synthesize those with this read before anything is fixed in PLAN.md (Rule 21 — nothing marked decided yet).
+
+Rules applied: 1, 2, 4, 5, 9, 10, 11, 13, 14, 16, 20, 21, 23, 26.
