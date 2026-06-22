@@ -311,23 +311,66 @@ class MLEngineerAgent:
             kind="dag_search")
         return best
 
-    def chat(self, message: str, history: Optional[List[Dict[str, str]]] = None) -> str:
-        """Converse with the agent (ENG-4). Works offline (templated reply) or via
-        an injected LLM text-completer, grounded in live state + retrieved knowledge."""
+    #: read-only tools the chat LLM may call (full file access; no mutate/web in chat)
+    _CHAT_TOOLS = ("list_files", "read_file", "search_files", "observe_state",
+                   "retrieve_knowledge", "recall_memory")
+
+    def chat(self, message: str, history: Optional[List[Dict[str, str]]] = None,
+             max_tool_calls: int = 6) -> str:
+        """Converse with the agent like a coding assistant — with FULL READ ACCESS to
+        the project files. A ReAct loop lets the LLM read/search the codebase before
+        answering (works with any text completer). Offline → templated reply."""
         self.ensure_books()
         observe = self.toolbox.observe_state()
         kn = self.toolbox.retrieve_knowledge(message, k=3)
         recalls = self.toolbox.recall_memory(message, k=3)
         if self.llm_chat is None:
             return self._templated_reply(message, observe, kn, recalls)
-        sys = (PERSONA + "\nAnswer the user grounded in this live state and "
-               "retrieved knowledge. Be concrete; cite a node/pathway/number when relevant.\n"
-               f"State: {json.dumps(observe)[:1500]}\n"
-               f"Knowledge: {json.dumps(kn)[:1000]}\n"
-               f"Your past findings: {json.dumps(recalls)[:800]}")
-        msgs = [{"role": "system", "content": sys}] + (history or []) + \
-               [{"role": "user", "content": message}]
-        return self.llm_chat(msgs)
+        tools_help = (
+            "You have FULL READ ACCESS to this project's files. To use a tool, reply with ONLY a "
+            "single JSON object on one line and NOTHING else:\n"
+            '{"tool":"list_files","pattern":"**/*.py"}\n'
+            '{"tool":"read_file","path":"pattern_brain/network.py"}\n'
+            '{"tool":"search_files","query":"def run_capstone"}\n'
+            '{"tool":"observe_state"}\n'
+            "I will reply with the tool result; then use another tool or give your FINAL ANSWER as "
+            "plain prose (no JSON). READ THE REAL CODE before answering questions about how it works.")
+        sys = (PERSONA + "\nYou are the ML Engineer for the Pattern Brain project (a network-of-models "
+               "that forecasts return distributions). Answer concretely, citing files/nodes/numbers.\n"
+               f"Live state: {json.dumps(observe)[:1100]}\n"
+               f"Retrieved knowledge: {json.dumps(kn)[:700]}\n" + tools_help)
+        convo = [{"role": "system", "content": sys}] + (history or []) + \
+                [{"role": "user", "content": message}]
+        for _ in range(max(1, max_tool_calls)):
+            reply = self.llm_chat(convo)
+            action = self._parse_tool(reply)
+            if action is None:
+                return reply                                 # final prose answer
+            name = action.get("tool")
+            if name not in self._CHAT_TOOLS:
+                result = {"error": f"{name!r} not available in chat (read-only): {list(self._CHAT_TOOLS)}"}
+            else:
+                try:
+                    result = self.toolbox.call(name, **{k: v for k, v in action.items() if k != "tool"})
+                except Exception as e:
+                    result = {"error": str(e)}
+            convo.append({"role": "assistant", "content": reply})
+            convo.append({"role": "user", "content": f"TOOL RESULT [{name}]:\n{json.dumps(result)[:6500]}"})
+        convo.append({"role": "user", "content": "Now give your final answer in plain prose."})
+        return self.llm_chat(convo)
+
+    @staticmethod
+    def _parse_tool(reply: str):
+        """Extract a single {\"tool\": ...} JSON action from an LLM reply, if present."""
+        import re
+        m = re.search(r'\{[^{}]*"tool"\s*:\s*"[^"]+"[^{}]*\}', reply or "", re.DOTALL)
+        if not m:
+            return None
+        try:
+            d = json.loads(m.group(0))
+            return d if isinstance(d, dict) and d.get("tool") else None
+        except Exception:
+            return None
 
     def _templated_reply(self, message, observe, kn, recalls) -> str:
         bank = observe["bank"]

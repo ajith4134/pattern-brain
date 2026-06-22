@@ -187,6 +187,58 @@ class Toolbox:
                 "shape": list(d["matrix"].shape), "feature_names": d["feature_names"],
                 "last_close": d["last_close"], "X": d["matrix"]}
 
+    # ------------------------------------------------ project file access (Rule 1)
+    _SKIP_DIRS = ("/.venv/", "/.git/", "/.pw-browsers/", "/ollama-bin/", "/ollama-models/",
+                  "/__pycache__/", "/node_modules/", "/data/")
+
+    def _safe(self, path: str) -> str:
+        full = os.path.abspath(os.path.join(PROJECT_ROOT, path))
+        if not (full == PROJECT_ROOT or full.startswith(PROJECT_ROOT + os.sep)):
+            raise ValueError(f"Rule 1: path must be inside {PROJECT_ROOT}")
+        return full
+
+    def list_files(self, pattern: str = "**/*.py", max_files: int = 300) -> List[str]:
+        """List project files matching a glob (relative to the project root). Skips
+        venv/git/caches/binaries. The LLM uses this to navigate the codebase."""
+        import glob
+        out = []
+        for p in sorted(glob.glob(os.path.join(PROJECT_ROOT, pattern), recursive=True)):
+            if os.path.isfile(p) and not any(s in p for s in self._SKIP_DIRS):
+                out.append(os.path.relpath(p, PROJECT_ROOT))
+                if len(out) >= max_files:
+                    break
+        return out
+
+    def read_file(self, path: str, max_chars: int = 24_000) -> Dict[str, Any]:
+        """Read a project file's text (Rule-1 scoped). Full read access for the LLM."""
+        full = self._safe(path)
+        if not os.path.isfile(full):
+            return {"path": path, "error": "not a file"}
+        with open(full, errors="replace") as fh:
+            txt = fh.read(max_chars + 1)
+        return {"path": path, "content": txt[:max_chars], "truncated": len(txt) > max_chars,
+                "chars": min(len(txt), max_chars)}
+
+    def search_files(self, query: str, pattern: str = "**/*.py", max_hits: int = 40) -> List[Dict[str, Any]]:
+        """Case-insensitive substring search across project files (grep-like)."""
+        import glob
+        out = []
+        ql = query.lower()
+        for p in sorted(glob.glob(os.path.join(PROJECT_ROOT, pattern), recursive=True)):
+            if not os.path.isfile(p) or any(s in p for s in self._SKIP_DIRS):
+                continue
+            try:
+                with open(p, errors="replace") as fh:
+                    for i, line in enumerate(fh, 1):
+                        if ql in line.lower():
+                            out.append({"file": os.path.relpath(p, PROJECT_ROOT), "line": i,
+                                        "text": line.strip()[:200]})
+                            if len(out) >= max_hits:
+                                return out
+            except Exception:
+                continue
+        return out
+
     # ----------------------------------------------- create / mutate (1/2/3)
     def evolver_for(self, feature: str, **kw):
         if feature not in _EVOLVERS:
@@ -262,6 +314,12 @@ class Toolbox:
                  "pathways (feature3); gated by the Evaluator.",
                  {"feature": {"type": "string"}}),
             spec("promote_to_node", "Register a gate-admitted winner as a new bank model node."),
+            spec("list_files", "List project files matching a glob (read access to the codebase).",
+                 {"pattern": {"type": "string"}}),
+            spec("read_file", "Read a project file's full text content.",
+                 {"path": {"type": "string"}}),
+            spec("search_files", "Search the project code for a substring (grep-like).",
+                 {"query": {"type": "string"}, "pattern": {"type": "string"}}),
         ]
 
     def call(self, name: str, **kw) -> Any:
