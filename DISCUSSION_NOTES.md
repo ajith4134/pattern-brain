@@ -1544,3 +1544,22 @@ WIRING: server.py /api/agent/chat now returns {reply, pending}; new /api/agent/c
 EVIDENCE (Rule 25/21): 3 new tests in test_file_access.py green (staged-not-executed/runs-once; cancel runs nothing; one good Q&A promoted, junk skipped, retrievable, idempotent). Real offline e2e: run_capstone → verdict PASS persisted + visible to read_capstone; run_dag_search → leaderboard n_runs=2 visible to read_leaderboard. Dashboard suite green (no regressions); new endpoints + chat pending key verified via ASGI TestClient. Pushed to main.
 
 Rules applied: 1, 2, 4, 5, 7, 10, 12, 13, 14, 16, 20, 21, 22, 23, 24, 25, 26.
+
+## 2026-06-22 — Self-Evolving Model Graph: full vision extracted + researched → PLAN §17
+
+Owner pasted a 3-message vision (connect ALL ml models into a network; LLM agent tries every connection-combination per data-type; raw→input-type & each output→next-input-type auto-chaining; score vs reality; rearrange until best ordering; SAVE all top combos; for sequences like n² AND markets multi-timeframe 5m/15m/30m/1h/4h from candles+orderbook imbalance+funding+OI+fear/sentiment) + "Intelligence Switch" adaptive compute manager (burst hardware per pathway, RAM-safe, auto-off) + phased 20→50→100-model roadmap + Python+C++/Rust language split. Biological framing: model=neuron, edge=synapse, group=region, graph=brain, evolution=neuroplasticity, reward=dopamine, memory=long-term synapse. Asked: extract ALL ideas, research, add to PLAN, then double-check nothing missed.
+
+KEY REFRAME (Rule 14, evidence-first): ~80% of this is ALREADY THIS PROJECT. Mapped every component to existing code — network.py (graph), interlingua.py (universal belief space = the {trend,confidence,...} idea), encoders.py+align_sources (universal encoder), reputation.py (synapse edges w/ strength+success-history), evolution.py+search.py (evolution engine), engineer/planner/advisor (LLM meta-scientist), evaluator+capstone (score vs reality), leaderboard (save top combos), equation nodes (discover n²). So the plan = close 6-7 specific GAPS, not rebuild.
+
+RESEARCHED (recent sources, Rule 11) → 7 PROPOSED workstreams ranked by leverage:
+- W1 (highest) Budget-aware smart search: Hyperband/ASHA successive-halving — tiny budget for all candidates, kill bottom 1/η, promote survivors. THE fix for the owner's own "9B pathways×5s=1426yr" problem; AlphaD3M/TPOT confirm DAG-pipeline search + the missing budget-early-stop. Caveat: SHA early-kill assumption → min-budget floor + keep DSR-deflation.
+- W2 Adaptive Compute Manager ("Intelligence Switch"): queue→resource-mgr→CPU/RAM/GPU sched→runner→scoring→evolution, load/run/score/unload/GC/auto-off. Owner half-right: sequential cuts peak RAM, but literature is clear RAM→100% triggers swap=throughput collapse (10s→10min). Correct version = adaptive pack-to-budget (CPU ~95%, RAM ~80%), not naive serial.
+- W3 Genome-library metadata + type-directed composition: declare per-node in/out belief-types + cost/latency/mem → prune incompatible edges BEFORE compute (cheapest pruning). The owner's "Model #45 input/output/compatible" + "convert output→next input type" formalized.
+- W4 Quality-Diversity archive (MAP-Elites): keep best pathway PER niche (symbol×timeframe×regime) + multi-horizon scoring → directly = "predict all timeframes + save all top combos" + fights convergence ("brain regions").
+- W5 Universal Market Embedding: (a) now—fuse orderbook imbalance/funding/OI/sentiment via align_sources; (b) later—reuse a TS foundation model (Chronos/MOIRAI/TimesFM) as optional encoder. Don't hand-build a 2048-dim embedding.
+- W6 (LAST) Hot-path port: owner right that models are already C/CUDA (rewrite=5-20% or nothing); real 10-100× is the orchestration/evolution/backtest inner loop → profile-first, port only that to Rust/PyO3. A 10× is a multiplier, NOT a substitute for W1.
+- W7 (optional) NEAT island/speciation — mostly subsumed by W4.
+
+Phased roadmap A→D ties model-count to compute (matches owner Phase 1-4). §17.4 honest reality check: bottleneck = search strategy not hardware/language; build smart before big; ~80% already built. §17.5 = explicit chat-coverage check listing EVERY idea + where it lands (nothing missed). All workstreams PROPOSED/approval-gated (Rule 26), cores domain-agnostic (Rule 23), no link to trading bot.
+
+Rules applied: 1, 2, 4, 5, 7, 9, 10, 11, 12, 13, 14, 16, 20, 21, 23, 24, 26.
