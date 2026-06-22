@@ -1530,3 +1530,17 @@ IDEA 3 — Phase-9 MoE regime-gate: 'gated' combiner in StackedDAG weights modul
 All green both interpreters; pushed. Honest overall: the system robustly forecasts return DISTRIBUTION/uncertainty (now productized as a risk layer), not direction; the dashboard shows the interconnected network + the frozen forward-test; the search now includes a regime-gate option.
 
 Rules applied: 1, 2, 4, 10, 19, 20, 21, 22, 23, 24, 25, 26.
+
+## 2026-06-22 — Operator mode (idea 2) + chat-Q&A consolidation (idea 3)
+
+Owner picked two next steps from the §15 menu: (2) let the chat TRIGGER A REAL RUN, not just read; (3) promote good chat Q&A into the book knowledge-base periodically.
+
+IDEA 2 — operator mode behind a confirmation gate. Chat now exposes two write tools — `run_dag_search` (search network combos on a symbol) and `run_capstone` (freeze→forward-test on a symbol) — wrapping the existing `plan_dag_search` + `adapters.crypto.run_crypto_capstone` machinery. Everything else stays read-only. DECISION (Rule 13/16): confirmation = explicit pending-action + confirm gate (not fragile NL "yes" detection) — the LLM emitting a write tool only STAGES it (`_pending_action`); it runs solely via `confirm_action(id, approve=True)`. Steelman of pure-NL-confirm: simpler/no endpoint, but the chat API is stateless per call and "yes"-detection is unreliable for a real-compute trigger; typed confirm/cancel still supported as a convenience. Safety rails: `_sanitize_write` clamps limit∈[120,2000], rounds∈[1,4], n_per_round∈[1,6]; runs bounded; results persist so the chat's own read_leaderboard/read_capstone see them right after. Domain boundary (Rule 23): cores stay agnostic, only data-loading is crypto via the existing adapter.
+
+IDEA 3 — `KnowledgeBase.consolidate_qa()`: scans archival kind=chat_qa, quality-filters (min length, drops offline-template/tool-echo junk), de-dups by question (blake2b id), re-tags survivors as source="consolidated_qa" so good answers become durable knowledge surfaced by retrieve (not just recent recall). Idempotent. Runs every 5 chat turns (best-effort) + on-demand button. Honest: raw chat_qa was already in the store but uncurated; this curates + promotes the good, deduped subset.
+
+WIRING: server.py /api/agent/chat now returns {reply, pending}; new /api/agent/confirm + /api/agent/consolidate. index.html chat card renders a Confirm/Cancel panel; knowledge card shows consolidated-Q&A count + a "Consolidate Q&A → knowledge" button.
+
+EVIDENCE (Rule 25/21): 3 new tests in test_file_access.py green (staged-not-executed/runs-once; cancel runs nothing; one good Q&A promoted, junk skipped, retrievable, idempotent). Real offline e2e: run_capstone → verdict PASS persisted + visible to read_capstone; run_dag_search → leaderboard n_runs=2 visible to read_leaderboard. Dashboard suite green (no regressions); new endpoints + chat pending key verified via ASGI TestClient. Pushed to main.
+
+Rules applied: 1, 2, 4, 5, 7, 10, 12, 13, 14, 16, 20, 21, 22, 23, 24, 25, 26.
