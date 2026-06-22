@@ -17,6 +17,11 @@ emitting EXISTING interlingua belief types so the bank stays conformant (Block 4
 
 These operationalize "predict chaos / convert randomness into patterns / separate
 signal from noise" on the generic (T, D) sequence — zero stock coupling.
+
+Batch 3 (appended below) adds the reflexivity/criticality/topology tier:
+`quadratic_hawkes` (QARCH + Zumbach feedback), `rough_volatility` (log-vol Hurst,
+GJR 2018), `soc_criticality` (Bak-Tang-Wiesenfeld avalanche power law), and
+`persistent_homology` (0-dim sublevel-set TDA, pure-numpy elder-rule merge tree).
 """
 from __future__ import annotations
 
@@ -534,3 +539,239 @@ class PhaseSpaceTakensNode(Node):
         return Belief("signal", {"correlation_dimension": corr_dim, "embedding_dim": m,
                                  "series": x.tolist()},
                       max(0.0, min(1.0, corr_dim / m)), self.name)
+
+
+# =====================================================================
+# Phase 7e — BATCH 3 (PLAN.md §11): quadratic-Hawkes / Zumbach feedback,
+# rough volatility / fBm roughness, Self-Organized Criticality avalanches,
+# and 0-dim persistent homology (TDA). All pure-numpy, no new deps:
+# the persistence node is the sublevel-set merge-tree (elder rule) on the
+# 1-D Morse function, which is exact and dependency-free; only H1 (loops)
+# would need ripser/gudhi, deferred (§0b heavy-deps-optional). All emit the
+# existing `signal` belief type, zero stock coupling (Rule 23).
+# =====================================================================
+
+
+@register
+class QuadraticHawkesNode(Node):
+    """Quadratic-Hawkes / QARCH feedback — how much volatility is *endogenously*
+    fed by the square of past returns (the price-feedback loop), plus the
+    **Zumbach effect**: past trends (signed cumulative return) predicting future
+    volatility more than past volatility predicts future trends — the time-reversal
+    asymmetry that linear Hawkes/GARCH miss. High quadratic feedback + positive
+    Zumbach asymmetry => reflexive, self-exciting (crisis-prone) dynamics."""
+    layer = "signal"
+    node_type = "quadratic_hawkes"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        x = X[:, 0].astype(float)
+        r = np.diff(x)
+        quad_feedback = zumbach = 0.0
+        if len(r) > 20:
+            v = r ** 2                                   # realized-variance proxy
+            # quadratic ARCH(1): regress v_t on v_{t-1} (squared-return feedback)
+            a, b = v[:-1], v[1:]
+            denom = float(np.sum((a - a.mean()) ** 2)) + 1e-12
+            quad_feedback = float(np.sum((a - a.mean()) * (b - b.mean())) / denom)
+            quad_feedback = max(0.0, min(1.0, quad_feedback))
+            # Zumbach: corr(past windowed trend^2, next-window vol) minus the
+            # reverse (past vol -> next trend) => time-reversal asymmetry.
+            w = max(3, len(r) // 20)
+            trend = np.array([r[i - w:i].sum() for i in range(w, len(r))])
+            futvol = np.array([np.sqrt(np.mean(v[i:i + w])) for i in range(w, len(r))])
+            n = min(len(trend), len(futvol))
+            if n > 5:
+                t2, fv = trend[:n] ** 2, futvol[:n]
+                c_fwd = _safe_corr(t2[:-1], fv[1:])      # trend^2 -> future vol
+                pastvol = np.array([np.sqrt(np.mean(v[max(0, i - w):i] + 1e-12))
+                                    for i in range(w, w + n)])
+                c_rev = _safe_corr(pastvol[:-1], np.abs(trend[:n])[1:])  # vol -> future |trend|
+                zumbach = float(c_fwd - c_rev)
+        endogeneity = max(0.0, min(1.0, 0.5 * quad_feedback + 0.5 * max(0.0, zumbach)))
+        return Belief("signal", {"quadratic_feedback": quad_feedback,
+                                 "zumbach_effect": zumbach, "endogeneity": endogeneity,
+                                 "series": x.tolist()},
+                      endogeneity, self.name)
+
+
+def _safe_corr(a: np.ndarray, b: np.ndarray) -> float:
+    if len(a) < 3 or np.std(a) < 1e-12 or np.std(b) < 1e-12:
+        return 0.0
+    return float(np.corrcoef(a, b)[0, 1])
+
+
+def _variogram_hurst(series: np.ndarray, lags) -> float:
+    """Hurst via the q=2 variogram (structure function):
+    E[(s_{t+L}-s_t)^2] ~ L^{2H}; slope/2 on log-log."""
+    pts = []
+    for L in lags:
+        if L >= len(series):
+            continue
+        d = series[L:] - series[:-L]
+        vg = float(np.mean(d ** 2))
+        if vg > 0:
+            pts.append((np.log(L), np.log(vg)))
+    if len(pts) < 2:
+        return 0.5
+    ls, vs = np.array([p[0] for p in pts]), np.array([p[1] for p in pts])
+    return float(np.clip(np.polyfit(ls, vs, 1)[0] / 2.0, 0.0, 1.0))
+
+
+@register
+class RoughVolatilityNode(Node):
+    """Rough-volatility estimator (Gatheral-Jaisson-Rosenbaum 2018): the Hurst of
+    the **log-volatility** path. Empirically H≈0.1 across assets — log-vol is
+    *rough* (far below the H=0.5 of a martingale), so vol is much more
+    mean-reverting/jagged than classical models assume. Also reports the fBm Hurst
+    of the level series (variogram) for contrast. is_rough = (log-vol H < 0.4)."""
+    layer = "signal"
+    node_type = "rough_volatility"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        x = X[:, 0].astype(float)
+        lags = [L for L in (1, 2, 3, 5, 8, 13, 21) if L < len(x) // 2]
+        level_hurst = _variogram_hurst(x, lags) if len(x) > 8 else 0.5
+        rough_hurst = 0.5
+        if len(x) > 40:
+            r = np.diff(x)
+            w = max(3, len(r) // 25)                     # local realized-vol window
+            rv = np.array([np.sqrt(np.mean(r[i:i + w] ** 2) + 1e-12)
+                           for i in range(0, len(r) - w)])
+            logvol = np.log(rv + 1e-9)
+            vlags = [L for L in (1, 2, 3, 5, 8) if L < len(logvol) // 2]
+            if len(vlags) >= 2:
+                rough_hurst = _variogram_hurst(logvol, vlags)
+        is_rough = bool(rough_hurst < 0.4)
+        # confidence: how far below the H=0.5 martingale floor (rougher => more notable)
+        conf = max(0.0, min(1.0, (0.5 - rough_hurst) / 0.5))
+        return Belief("signal", {"rough_hurst": rough_hurst, "level_hurst": level_hurst,
+                                 "is_rough": is_rough, "series": x.tolist()},
+                      conf, self.name)
+
+
+@register
+class SOCCriticalityNode(Node):
+    """Self-Organized Criticality (Bak-Tang-Wiesenfeld sandpile idea, applied to a
+    series): treat threshold-exceeding excursions as 'avalanches'; a system poised
+    at criticality emits **scale-free** avalanche sizes, P(s) ~ s^-alpha. Fits the
+    power-law tail by MLE (Clauset-Shalizi-Newman) and reports how heavy-tailed /
+    scale-free the avalanche distribution is. alpha in ~[1.5, 3] with a broad span
+    => SOC-like; a flat/Poisson series => few avalanches, no power law."""
+    layer = "signal"
+    node_type = "soc_criticality"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        x = X[:, 0].astype(float)
+        r = np.abs(np.diff(x))
+        sizes = []
+        if len(r) > 10:
+            # Fixed-rate (high-quantile) threshold: captures the same tail fraction
+            # regardless of amplitude, so the avalanche-SIZE distribution — not the
+            # count — carries the scale-free SOC signature (a low-noise series and a
+            # bursty one both exceed ~10% of the time; only the bursty one's sizes
+            # span many decades).
+            thr = float(np.quantile(r, 0.90))
+            run = 0.0
+            for val in r:
+                if val > thr:
+                    run += (val - thr)
+                elif run > 0:
+                    sizes.append(run); run = 0.0
+            if run > 0:
+                sizes.append(run)
+        sizes = np.array([s for s in sizes if s > 0])
+        n_av = int(len(sizes))
+        alpha = scale_free = 0.0
+        if n_av >= 5:
+            smin = sizes.min()
+            # Clauset MLE for continuous power law with xmin = smin
+            ratio = np.log(sizes / (smin + 1e-12))
+            denom = float(np.sum(ratio))
+            if denom > 1e-9:
+                alpha = float(1.0 + n_av / denom)
+            # Heavy-tail / scale-free signature via max-to-median dispersion (robust
+            # to the many near-threshold tiny avalanches that would inflate a raw
+            # max/min span): a flat series has max~median (heaviness~1); a critical
+            # series has rare giant avalanches dwarfing the typical one.
+            med = float(np.median(sizes)) + 1e-12
+            heaviness = float(sizes.max() / med)
+            scale_free = max(0.0, min(1.0, np.log10(heaviness + 1.0) / 2.0))
+        critical = bool(1.5 <= alpha <= 3.5 and scale_free > 0.3)
+        return Belief("signal", {"powerlaw_exponent": alpha, "n_avalanches": n_av,
+                                 "scale_free": scale_free, "critical": critical,
+                                 "series": x.tolist()},
+                      scale_free, self.name)
+
+
+@register
+class PersistentHomologyNode(Node):
+    """Topological Data Analysis — 0-dimensional **sublevel-set persistence** of the
+    series viewed as a 1-D Morse function. Sweeping the value axis upward, connected
+    components are born at local minima and merge at saddles; the **elder rule**
+    pairs each (younger) component's birth with its death, giving a persistence
+    diagram. Total/maximum persistence and persistence entropy summarize the
+    multi-scale topological structure (how many robust 'basins' the signal has, and
+    how evenly distributed their salience is). Exact and dependency-free; H1 (loops,
+    needing a Vietoris-Rips filtration via ripser/gudhi) is deferred (§0b)."""
+    layer = "signal"
+    node_type = "persistent_homology"
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        x = X[:, 0].astype(float)
+        births, deaths = _sublevel_persistence(x)
+        lifetimes = np.array([d - b for b, d in zip(births, deaths)])
+        lifetimes = lifetimes[lifetimes > 0]
+        n_feat = int(len(lifetimes))
+        total = float(lifetimes.sum()) if n_feat else 0.0
+        max_p = float(lifetimes.max()) if n_feat else 0.0
+        p_entropy = 0.0
+        if n_feat:
+            p = lifetimes / (total + 1e-12)
+            p = p[p > 0]
+            p_entropy = float(-np.sum(p * np.log(p)) / (np.log(n_feat) + 1e-12)) if n_feat > 1 else 0.0
+        rng = float(np.ptp(x)) + 1e-12
+        diagram = [[float(b), float(d)] for b, d in zip(births, deaths) if d - b > 0]
+        return Belief("signal", {"n_features": n_feat, "total_persistence": total,
+                                 "max_persistence": max_p, "persistence_entropy": p_entropy,
+                                 "diagram": diagram, "series": x.tolist()},
+                      max(0.0, min(1.0, max_p / rng)), self.name)
+
+
+def _sublevel_persistence(x: np.ndarray):
+    """0-dim persistence of a 1-D series (elder rule over the merge tree).
+    Returns (births, deaths) for the finite pairs; the global-minimum component
+    (which never dies) is omitted. Pure numpy union-find, O(n alpha(n))."""
+    n = len(x)
+    if n < 2:
+        return [], []
+    order = np.argsort(x, kind="mergesort")            # process by increasing value
+    parent = np.full(n, -1, dtype=int)
+    birth = np.zeros(n)
+    active = np.zeros(n, dtype=bool)
+    births, deaths = [], []
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for idx in order:
+        idx = int(idx)
+        parent[idx] = idx
+        birth[idx] = x[idx]
+        active[idx] = True
+        roots = {idx}
+        for nb in (idx - 1, idx + 1):
+            if 0 <= nb < n and active[nb]:
+                roots.add(find(nb))
+        if len(roots) > 1:
+            elder = min(roots, key=lambda r: (birth[r], r))   # smallest birth survives
+            for r in roots:
+                if r == elder:
+                    continue
+                births.append(float(birth[r]))                # younger dies at x[idx]
+                deaths.append(float(x[idx]))
+                parent[r] = elder
+            birth[elder] = min(birth[elder], birth[idx])
+    return births, deaths

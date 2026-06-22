@@ -21,6 +21,8 @@ PHYSICS = ["esn_forecaster", "deterministic_esn_forecaster", "lyapunov_exponent"
 PHYSICS2 = ["quantile_forecaster", "bayesian_ar_ensemble", "conformal_forecaster",
             "bayesian_bootstrap", "hawkes_intensity", "mfdfa", "tsallis_entropy",
             "phase_space_takens"]
+PHYSICS3 = ["quadratic_hawkes", "rough_volatility", "soc_criticality",
+            "persistent_homology"]
 
 
 def check(cond, msg):
@@ -149,6 +151,92 @@ def test_hawkes_detects_clustering():
     print(f"  hawkes: clustered Fano={f_bursty:.2f} >= smooth Fano={f_smooth:.2f}")
 
 
+def test_batch3_registered_and_conform():
+    rng = np.random.default_rng(19)
+    x = np.cumsum(rng.normal(size=400)).reshape(-1, 1)
+    for n in PHYSICS3:
+        check(n in all_node_types(), f"{n} not registered")
+        b = create(n).predict(x)
+        check(not validate_belief(b), f"{n} off-contract: {validate_belief(b)}")
+        check(np.isfinite(b.confidence), f"{n} non-finite conf")
+    print(f"  all {len(PHYSICS3)} batch-3 nodes registered, run, and conform")
+
+
+def test_quadratic_hawkes_flags_volatility_feedback():
+    """A vol-clustering (ARCH) series should show stronger quadratic feedback than
+    an i.i.d. gaussian series (which has none)."""
+    rng = np.random.default_rng(21)
+    n = 600
+    # ARCH(1): sigma^2_t depends on last squared return -> squared-return feedback
+    r = np.zeros(n); s2 = np.ones(n)
+    for t in range(1, n):
+        s2[t] = 0.1 + 0.85 * r[t - 1] ** 2
+        r[t] = np.sqrt(s2[t]) * rng.normal()
+    arch = np.cumsum(r).reshape(-1, 1)
+    iid = np.cumsum(rng.normal(size=n)).reshape(-1, 1)
+    fb_arch = create("quadratic_hawkes").predict(arch).payload["quadratic_feedback"]
+    fb_iid = create("quadratic_hawkes").predict(iid).payload["quadratic_feedback"]
+    check(fb_arch > fb_iid, f"quad feedback should rank ARCH>iid, got {fb_arch:.3f} vs {fb_iid:.3f}")
+    print(f"  quadratic_hawkes: ARCH feedback={fb_arch:.3f} > iid={fb_iid:.3f}")
+
+
+def test_rough_volatility_detects_roughness():
+    """Log-vol of a vol-clustering series is rough (H well below 0.5); the node
+    should report a finite rough_hurst in [0,1] and flag roughness on a series
+    whose volatility itself fluctuates fast."""
+    rng = np.random.default_rng(23)
+    n = 800
+    # fast-fluctuating volatility -> rough log-vol path
+    vol = 0.2 + 0.15 * np.abs(rng.normal(size=n))
+    series = np.cumsum(vol * rng.normal(size=n)).reshape(-1, 1)
+    p = create("rough_volatility").predict(series).payload
+    check(0.0 <= p["rough_hurst"] <= 1.0, f"rough_hurst out of range: {p['rough_hurst']}")
+    check(0.0 <= p["level_hurst"] <= 1.0, f"level_hurst out of range: {p['level_hurst']}")
+    check(isinstance(p["is_rough"], bool), "is_rough must be bool")
+    print(f"  rough_volatility: rough_hurst={p['rough_hurst']:.2f}, level_hurst={p['level_hurst']:.2f}, rough={p['is_rough']}")
+
+
+def test_soc_avalanches_scale_free():
+    """The SOC signature is a *scale-free* avalanche-size distribution, not the raw
+    count. A series with multi-scale bursts should have a broader (more scale-free)
+    size distribution and a finite power-law exponent vs a smooth low-noise series
+    whose exceedances are all the same tiny size."""
+    rng = np.random.default_rng(29)
+    n = 600
+    smooth = np.cumsum(rng.normal(scale=0.05, size=n)).reshape(-1, 1)
+    bursts = rng.normal(scale=0.05, size=n)
+    for c in (60, 150, 151, 152, 300, 301, 450, 451, 452, 453):  # multi-scale avalanches
+        bursts[c] += rng.uniform(2, 9)
+    bursty = np.cumsum(bursts).reshape(-1, 1)
+    s_b = create("soc_criticality").predict(bursty).payload
+    s_s = create("soc_criticality").predict(smooth).payload
+    check(s_b["scale_free"] > s_s["scale_free"],
+          f"bursty should be more scale-free: {s_b['scale_free']:.2f} vs {s_s['scale_free']:.2f}")
+    check(s_b["powerlaw_exponent"] > 0, "power-law exponent should be positive when avalanches exist")
+    check(s_b["n_avalanches"] >= 5, f"bursty should yield >=5 avalanches, got {s_b['n_avalanches']}")
+    print(f"  soc: bursty alpha={s_b['powerlaw_exponent']:.2f} "
+          f"scale_free={s_b['scale_free']:.2f} > smooth {s_s['scale_free']:.2f} "
+          f"(n_av bursty={s_b['n_avalanches']})")
+
+
+def test_persistent_homology_topology():
+    """An oscillating signal has many topological basins (high n_features); a
+    monotone ramp has essentially none. Lifetimes/diagram must be consistent."""
+    osc = np.sin(np.linspace(0, 30 * np.pi, 500)).reshape(-1, 1)
+    ramp = np.linspace(0, 10, 500).reshape(-1, 1)
+    po = create("persistent_homology").predict(osc).payload
+    pr = create("persistent_homology").predict(ramp).payload
+    check(po["n_features"] >= 5, f"oscillation should yield many basins, got {po['n_features']}")
+    check(pr["n_features"] <= 1, f"monotone ramp should yield ~0 basins, got {pr['n_features']}")
+    check(po["total_persistence"] > pr["total_persistence"],
+          "oscillation should have more total persistence than a ramp")
+    check(len(po["diagram"]) == po["n_features"], "diagram length must equal n_features")
+    check(all(d > b for b, d in po["diagram"]), "every persistence pair must have death > birth")
+    check(0.0 <= po["persistence_entropy"] <= 1.0, "persistence entropy must be normalized [0,1]")
+    print(f"  persistent_homology: oscillation features={po['n_features']} "
+          f"(ramp={pr['n_features']}), entropy={po['persistence_entropy']:.2f}")
+
+
 def test_domain_independence():
     import tokenize
     forbidden = ("candle", "ohlcv", "orderbook", "order_book")
@@ -176,6 +264,11 @@ def main():
     test_batch2_registered_and_conform()
     test_distributional_forecasters_are_ordered()
     test_hawkes_detects_clustering()
+    test_batch3_registered_and_conform()
+    test_quadratic_hawkes_flags_volatility_feedback()
+    test_rough_volatility_detects_roughness()
+    test_soc_avalanches_scale_free()
+    test_persistent_homology_topology()
     test_domain_independence()
     print("=" * 70)
     if FAILS:
