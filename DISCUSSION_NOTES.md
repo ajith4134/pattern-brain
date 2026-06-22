@@ -1376,3 +1376,54 @@ The owner's three asks map almost 1:1 onto code that already exists, but at SING
 Owner will feed seed ideas/conversations next; Claude to synthesize those with this read before anything is fixed in PLAN.md (Rule 21 — nothing marked decided yet).
 
 Rules applied: 1, 2, 4, 5, 9, 10, 11, 13, 14, 16, 20, 21, 23, 26.
+
+---
+
+## 2026-06-22 — DISCUSSION (cont.): owner pasted an external "ideas chat"; synthesis into Phase 8 plan
+
+Owner pasted a long external AI conversation (AutoML / stacked ensembles / NAS / search algos / LLM-agent-as-planner / vector-DB vs feature-store) and asked: "the spheres become ML models — how do I tell my coding agent to make hundreds of models connect like this, try all combinations on input data, test the output, and score which network scores high. Read every word, get inspired, decide the plan and features."
+
+### The pasted advice, summarized (its throughline)
+- Category = **AutoML + stacked ensembles + graph/NAS search**. Tools floated: AutoGluon (baseline), auto-sklearn, TPOT, Optuna, NetworkX, MLflow/SQLite, joblib.
+- **Don't brute-force combinations** — use SEARCH: random → evolutionary (mutate add/remove/rewire/change-meta) → Bayesian/Optuna → RL (later) → NAS.
+- Workflow: train base models → **out-of-fold predictions** → treat each model as a graph node → search DAG combinations → train meta-models per node → score on validation → **leaderboard** → mutate top → export best pipeline.
+- **LLM agent = controller/planner, NOT the scorer** (suggests combos, reads leaderboard, proposes mutations, checks leakage, writes configs; accuracy comes ONLY from validation data).
+- Vector DB ≠ raw-data→model-input converter; it's memory/retrieval (RAG). For inputs use a **Feature Factory → Feature Store** (RSI/MACD/returns/vol/lags/regime…), automated FE (Featuretools/tsfresh), embeddings for unstructured data. Brain arch: raw → input router → per-modality encoders → shared feature space → 100-500 specialist models → graph search → meta models → output.
+- Headline phrase: **"Evolutionary search over stacked ensemble DAGs with an LLM experiment-planning agent."**
+
+### Claude's evidence-based read (Rule 26) — what we ALREADY have vs the gap
+That headline IS this project's destiny, and ~70% exists:
+- evolutionary DAG search → `evolution.py::PathwayEvolver` (evolves pathway topology, Evaluator-gated)
+- score/validation → `evaluator.py` (purged walk-forward + DSR + CSCV/PBO) — our accuracy meter
+- leaderboard-ish feedback → `reputation.py` (discounted-UCB)
+- LLM planner not scorer → `agent/engineer.py` (MLEngineerAgent) + the producer-door/Evaluator-gate pattern (LLM proposes, Evaluator decides) — EXACTLY their rule
+- vector DB for memory → `knowledge.py` (already present, used for agent RAG/memory ONLY — their take is correct)
+- feature generation → much of the signal/noise/infotheory/equation layers ARE feature generators; frac-diff lives in the adapter
+- raw→(T,D) input → `adapters/`
+
+**The GAP (what to actually build) = the connective tissue to lift single-pathway → whole-bank DAG search:**
+1. OOF (out-of-fold) prediction harness on the EXISTING purged-walk-forward splits → leakage-safe per-node prediction cache.
+2. Feature Factory: generic features in CORE (lags/returns/rolling/frac-diff/spectral/entropy — Rule 23), stock-specific (RSI/MACD/VWAP/orderbook) in the ADAPTER; cached in a simple in-folder Feature Store.
+3. Stacked-DAG object: generalize the single pathway to a multi-layer DAG (base nodes → meta-nodes consuming OOF beliefs → final combiner); a DAG executor.
+4. Persistent LEADERBOARD (stdlib sqlite, in-folder Rule 1) of every (DAG config → walk-forward score) + a dashboard tab.
+5. Search engine with pluggable strategies: random → evolutionary (generalize PathwayEvolver) → Bayesian (Optuna, optional light dep).
+6. LLM experiment-planner: wire MLEngineerAgent to read the leaderboard + propose next DAG mutations (controller, never scorer).
+7. Accuracy target/metric defined (the search objective).
+
+### Claude's THREE expert corrections (value beyond the pasted advice)
+- **(A) Do NOT add AutoGluon/auto-sklearn/TPOT as components.** They're tabular-AutoML — they'd violate Rule 23 (data-shaped around tables), duplicate our bank, and add heavy deps. Adopt their PATTERNS (multi-layer stacking, OOF, leaderboard), not the tools. (Optional: run AutoGluon ONCE offline as an external benchmark number to beat.) Steelman (Rule 16): AutoGluon gives a fast strong baseline — fair, so use it as an *external yardstick*, not a built-in.
+- **(B) THE dominant risk the pasted plan underweights = overfitting / multiple-testing.** "Search thousands of DAGs, keep the best validation score" is selection-on-noise — it WILL look great in backtest and die live (the entire trading-bot memory is this bug class). Our unfair advantage: the Evaluator already has **Deflated Sharpe + CSCV/PBO** that deflate for the number of configs tried. The plan MUST pick the "best" by DSR/PBO-adjusted score over the count of DAGs searched, never raw validation. This is the single most important correction.
+- **(C) Feature factory must obey Rule 23:** generic features in core, stock features in the adapter — never bake candle/orderbook features into the core feature layer.
+
+### Dep verdicts (Rule 11 / §0b — light by default)
+- AutoGluon/auto-sklearn/TPOT: ❌ as components (optional external benchmark only). Optuna: 🟢 optional, light, pure-python — adds Bayesian/TPE search we lack. NetworkX: 🟡 optional (viz only; own light DAG repr otherwise). MLflow: ❌ (heavy) → stdlib **sqlite** leaderboard. Featuretools/tsfresh/Feast/Hopsworks: ❌ deps → light in-folder feature factory + cache. Vector DB: ✅ already present (knowledge.py), keep for memory/RAG only.
+
+### Proposed name + phasing (PROPOSED 🟡, awaiting owner's fork answers before PLAN.md)
+**Phase 8 — "The Network": AutoML Stacked-DAG Search** (= their headline, built on our bank+Evaluator+agent). Sub-order = the 7-item gap list above. Phase 9 = MoE learned gate (Connector v2) trained on Phase-8 leaderboard data. Phase 10 = evolved/RL topology on top.
+
+### Forks to lock with the owner (Rule 13/15) — asked via AskUserQuestion this turn
+1. Prediction target + score (one-step return + directional hit-rate [rec] / full distribution / trade-P&L).
+2. Scope now (numeric time-series first, multimodal later [rec] / build multimodal "any raw data" brain now).
+3. New light deps (allow Optuna + stdlib sqlite [rec] / zero new deps, implement search ourselves).
+
+Nothing marked decided in PLAN.md yet (Rule 21). Rules applied: 1, 2, 4, 5, 9, 10, 11, 13, 14, 16, 20, 21, 23, 26.
