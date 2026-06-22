@@ -390,6 +390,7 @@ class MLEngineerAgent:
         if answer is None:
             convo.append({"role": "user", "content": "Now give your final answer in plain prose (no tools)."})
             answer = self.llm_chat(convo)
+        answer = self._clean_answer(answer)                  # strip any stray tool-JSON fragment
         try:                                                 # cache the Q&A (builds project knowledge)
             self.toolbox.remember(f"Q: {message}\nA: {answer}", kind="chat_qa")
             self._maybe_consolidate()                        # periodic promotion to knowledge (idea 3)
@@ -536,6 +537,17 @@ class MLEngineerAgent:
                 self.consolidate()
             except Exception:
                 self._qa_since_consolidate = 0
+
+    @staticmethod
+    def _clean_answer(text: str) -> str:
+        """Strip any stray ``{"tool": ...}`` JSON fragment the model left in its
+        FINAL prose answer (happens when the wall-clock deadline cuts the ReAct
+        loop mid-thought). Cosmetic — keeps the human-facing reply clean."""
+        import re
+        if not text:
+            return text
+        cleaned = re.sub(r'\{[^{}]*"tool"\s*:\s*"[^"]+"[^{}]*\}', "", text).strip()
+        return cleaned or text          # never return empty if the whole reply was a tool call
 
     @staticmethod
     def _parse_tool(reply: str):
