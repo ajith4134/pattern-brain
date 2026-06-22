@@ -1,0 +1,4 @@
+# Phase-8 DAG-search extra (PLAN.md §12, owner-approved 2026-06-22).
+# Optional: search.py degrades to random + evolutionary search without it.
+# Bayesian/TPE architecture search over Stacked-DAGs.
+optuna>=3.0
