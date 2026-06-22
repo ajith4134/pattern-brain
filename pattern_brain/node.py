@@ -38,6 +38,7 @@ class Node(ABC):
     node_type: str = "abstract"      # unique registry key
     requires_y: bool = False         # True for supervised nodes
     is_transformer: bool = False     # True if the node also outputs a (T, D') sequence
+    cost: Optional[str] = None       # W3 genome hint: "low"|"med"|"high" (None → derived, see genome.py)
 
     def __init__(self, name: Optional[str] = None, **params: Any) -> None:
         self.name = name or self.node_type
@@ -100,6 +101,7 @@ class Node(ABC):
             "name": self.name,
             "requires_y": self.requires_y,
             "is_transformer": self.is_transformer,
+            "cost": self.cost,
             "params": dict(self.params),
             "fitted": self._fitted,
         }

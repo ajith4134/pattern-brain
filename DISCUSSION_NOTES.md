@@ -1625,3 +1625,21 @@ VERIFIED LIVE (Rule 19):
 - Per-backend honest status for the owner: working now = zai(active), qwen, nvidia, openrouter, groq; broken = deepseek(402 top-up needed), cerebras(429 transient), mistral(hangs), ollama-local(hangs on no-GPU). The agent uses zai first, so it replies fine; the broken ones auto-cooldown.
 
 Rules applied: 1, 2, 4, 5, 7, 10, 14, 18, 19, 20, 21, 24, 26.
+
+## 2026-06-22 — Item 2 DONE: W1 (Hyperband/Successive-Halving) + W3 (genome metadata/typing)
+
+Owner approved items 1→2→3 in order; item 1 (decomposition nodes) done earlier. Item 2 = the two Phase-A workstreams.
+
+W3 — Model Genome Library (pattern_brain/genome.py): derives per-node cost/role/out_kind from the registry (no hand-annotation of 199 nodes; optional Node.cost override added to the base). node_cost (torch=high, heavier light families=med, else low), role (feature/predictor/terminal), out_kind, and compatible(a,b) = type-directed composition predicate (respect Block-18 layer order + never chain OUT of a terminal; unknown→allowed so nothing is silently excluded). genome_library() = the full metadata table.
+
+W1 — budget-aware smart search (pattern_brain/scheduler.py): SuccessiveHalving (rung ladder of (data_fraction, n_samples) cheap→expensive; keep top 1/eta; promote survivors; record only the final rung so screening doesn't pollute the leaderboard) + Hyperband (decreasing-width brackets). Budget threaded via new DAGSearch.score_spec_budgeted(spec, frac, n_samples, record) (scores on a trailing data window + fewer MC samples) and DAGSearch.hyperband_search(). The scheduler uses W3 to drop terminal nodes from forecaster pools before compute.
+
+This is the direct answer to the owner's own "9B pathways × 5s = 1426 years" problem: full budget is spent only on the ~survivors.
+
+Evidence (Rule 25, tests/test_scheduler.py green): genome 164 nodes carded + cost/role correct; compatibility enforces layer-order + no-terminal-upstream (30 terminals); budgeted scoring ~8x cheaper (n=14 vs 110 steps); Successive-Halving narrows 9→3→1 in 13 evals vs 27 full-grid; Hyperband 2 brackets records the winner. Regressions clean: test_bank, test_search, test_decomposition all green.
+
+Also this turn: fixed idea 1 (strip stray tool-JSON from final chat answer). Server restarted clean with all chat-bounding fixes; verified live.
+
+Follow-ons noted: ASHA (async) waits on W2 compute manager; surface rung-ladder + genome cards on dashboard; route operator run_dag_search through Hyperband. Item 3 = defer GPU/foundation-model/Rust (no action). 
+
+Rules applied: 1, 2, 4, 5, 7, 10, 12, 14, 16, 19, 20, 21, 22, 23, 24, 25, 26.

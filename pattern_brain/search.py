@@ -115,6 +115,44 @@ class DAGSearch:
         self._seen.add(spec.signature())
         return score
 
+    # ------------------------------------------- budgeted scoring (W1 Hyperband)
+    def score_spec_budgeted(self, spec: DAGSpec, frac: float = 1.0,
+                            n_samples: Optional[int] = None,
+                            record: bool = False) -> Dict[str, object]:
+        """Score a spec at a RESOURCE BUDGET: ``frac`` of the data window and
+        ``n_samples`` MC samples (PLAN §17.1 W1). A small budget = a cheap, rough
+        screen; ``frac=1.0`` = the full, accurate score. Only records to the
+        leaderboard when ``record=True`` (the final rung) so cheap screening
+        passes don't pollute the persisted leaderboard."""
+        ns = int(n_samples or self.n_samples)
+        T = len(self.X)
+        if frac >= 1.0:
+            Xw = self.X
+        else:
+            win = max(self.min_train + 12, int(frac * T))     # keep ≥~12 forecast steps
+            Xw = self.X[-win:]
+        score = StackedDAG(spec, self.min_train, ns, self.seed).score(Xw)
+        if record:
+            series = score.get("outcome_series") or []
+            dsr = None
+            if score.get("n", 0) >= 8 and len(series) >= 8:
+                try:
+                    dsr = float(self.ev.evaluate_outcomes(series, n_trials=max(1, self._budget)).dsr)
+                except Exception:
+                    dsr = None
+            score["dsr"] = dsr
+            self.lb.record(spec, score, dataset_id=self.dataset_id, dsr=dsr)
+            self._seen.add(spec.signature())
+        return score
+
+    def hyperband_search(self, max_configs: int = 27, eta: int = 3) -> Optional[Dict]:
+        """Budget-aware smart search (Successive Halving / Hyperband, PLAN §17.1
+        W1): screen many candidates cheaply, refine only survivors at full budget.
+        Returns the Hyperband report; the best spec is also on the leaderboard."""
+        from .scheduler import Hyperband
+        self._budget = max(self._budget, max_configs)
+        return Hyperband(self, eta=eta, seed=self.seed).run(max_configs=max_configs)
+
     # -------------------------------------------------------------- strategies
     def random_search(self, n: int = 10) -> Optional[Dict]:
         self._budget = max(self._budget, n)
