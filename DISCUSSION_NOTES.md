@@ -1460,3 +1460,19 @@ LLM-acquisition design: adapters/crypto.py (deterministic fetchers, Rule 23) + f
 Recorded as PLAN.md §12.1 (Capstone = Phase-8 slice 9: adapters/crypto.py + fetch tool + capstone.py freeze/forward-test harness + dashboard Capstone tab). Open dep fork: ccxt (robust, handles US geo-block on Binance.com) vs urllib-only. Status: PLANNED, no code built (planning session). Awaiting owner: dep choice + go-ahead to start building Phase-8 slice 1.
 
 Rules applied: 1, 2, 4, 5, 9, 10, 11, 12, 13, 14, 15, 16, 20, 21, 22, 23, 26.
+
+---
+
+## 2026-06-22 — DISCUSSION: data-translation / output→input problem → it's already our core (decision recorded)
+
+Owner paused building, pasted an external chat on (a) converting raw data → each model's required inputs (Universal Data Translator / Feature Factory / Market Encoder / Universal Representation) and (b) connecting one model's output (different format) into another model's input (Universal Belief Space / Embedding Space / Functional Outputs / per-pair Adapters). Asked: "is there software that converts raw data into what each ML needs and converts their unique outputs into a usable form? how do we feed one model's output into another?" Then: "think hard."
+
+CLAUDE'S FINDING (Rule 14, evidence from code): the external chat RE-DERIVES pattern-brain's existing architecture — including the SAME "voltage/signal standard" electronics metaphor that's literally in belief.py (Block 16). Mapped 1:1: Belief+interlingua = its "Universal Belief Space/Format" (Option 1); Node common interface (T,D)→Belief = O(N) in + O(N) out (avoids its Option-4 "250,000 adapters" explosion); connector.py = "all comms via belief space"; adapters/stock.py = raw→input; Feature Factory = slices 2-3. So ~90% already built/planned.
+
+THE REAL un-built 10% it surfaces: for STACKING, a downstream node must eat an upstream node's OUTPUT as input, but a typed Belief isn't yet projected to numeric features. → NEW named component belief_features.py (Belief→feature-vector encoder), slice 4/5.
+
+DECISION recorded in PLAN §12.2 (the hybrid): typed Belief = canonical (Option 1, built); ADD deterministic Belief→feature now (transparent/leak-auditable); DEFER learned Belief→embedding to Phase 9 (gate learns it from leaderboard data); REJECT per-pair adapters (O(N²)); DEFER functional outputs; learned market foundation-encoder = later optional research arm (no-GPU + falsifiability-first). Rule 23 held.
+
+Status: decision made + recorded; no code built this turn (owner paused build). Slice 1 (scoring.py) remains the last built artifact. Next: resume Phase-8 slice 2 (encoder adapters) on owner go-ahead, with belief_features.py now an explicit slice-4 deliverable.
+
+Rules applied: 1, 2, 4, 5, 10, 13, 14, 16, 20, 21, 22, 23, 26.
