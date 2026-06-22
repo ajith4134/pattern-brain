@@ -1563,3 +1563,23 @@ RESEARCHED (recent sources, Rule 11) → 7 PROPOSED workstreams ranked by levera
 Phased roadmap A→D ties model-count to compute (matches owner Phase 1-4). §17.4 honest reality check: bottleneck = search strategy not hardware/language; build smart before big; ~80% already built. §17.5 = explicit chat-coverage check listing EVERY idea + where it lands (nothing missed). All workstreams PROPOSED/approval-gated (Rule 26), cores domain-agnostic (Rule 23), no link to trading bot.
 
 Rules applied: 1, 2, 4, 5, 7, 9, 10, 11, 12, 13, 14, 16, 20, 21, 23, 24, 26.
+
+## 2026-06-22 — Re-check pass (owner: "did you miss any topics?") → PLAN §17.6
+
+Did a genuine line-by-line re-scan of the 3-message chat vs PLAN §17 (not a rubber-stamp). High-level ideas were all covered; the re-check surfaced 6 FINER items the first pass glossed, now added as §17.6:
+
+(a) Named-model coverage VERIFIED against the registry (196 node_types). Almost all owner-named models exist (HMM, Kalman, LSTM, GRU, Transformer, PatchTST, TCN, HDBSCAN, GMM, Bayesian-net family, SINDy/symbolic_regression, PPO/SAC/TD3/A3C/DQN, autoencoders, Mamba, SSM, ESN/reservoir). GENUINE BANK GAPS found vs owner's list: Wavelet/DWT, SSA, EMD (have fft but no time-frequency decomposition), and PySR-specific backend (capability exists via symbolic_regression/sindy). → Phase-C bank-growth checklist. (Corrected my own first grep: "reservoir" looked MISSING but it's named esn_forecaster — verified before reporting.)
+
+(b) Hardware reality (was unstated): THIS box = 12 cores, 33 GiB RAM, NO GPU (torch CPU-only). Folded into W2: GPU-scheduler inert here, "use all GPU VRAM" N/A; RAM budget ~80% of 33GiB, CPU ~95% of 12 cores; phased roadmap sized to a single node.
+
+(c) LLM-as-converter divergence made explicit (design decision + Rule-16 steelman): owner's literal model = LLM converts raw→input & each output→next-input. Our design = deterministic adapters + versioned interlingua on the hot path (fast/reproducible/drift-checked); LLM reserved for AUTHORING a new adapter when no typed bridge exists ("scientist, not predictor"). The owner's per-step-LLM would be most flexible but slow/nondeterministic/unverifiable at scale.
+
+(d) Data-type-conditioned model PRE-SELECTION ("depending on the type of data") promoted to explicit sub-item W3.5: a cheap context gate picks WHICH models enter the candidate pool by modality/regime BEFORE the search — distinct from W1 budget-screening. Reuses coverage.py family tags + reputation regime memory.
+
+(e) Continuous operation/retraining ("continuous mutation, continuous retraining") mapped: engineer.run_forever() under the W2 Compute Manager + a staleness re-score trigger. No new system.
+
+(f) HyperNEAT/indirect encoding folded into W7 (lower priority than W4 MAP-Elites for graph-of-models).
+
+Pushed. Honest: the first §17 pass captured all major architecture; this pass added concrete bank gaps (Wavelet/SSA/EMD/PySR), the no-GPU/12-core/33GiB sizing reality, and sharpened the LLM-converter + data-type-gate nuances.
+
+Rules applied: 1, 2, 4, 5, 7, 10, 14, 16, 20, 21, 23, 24, 26.
