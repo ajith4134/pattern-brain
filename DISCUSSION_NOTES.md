@@ -1442,3 +1442,21 @@ Owner: "understand the message, search online, then plan." Claude ran 2026 web r
 **Plan recorded in PLAN.md §12** ("Phase 8 — THE NETWORK: Multimodal AutoML Stacked-DAG Search w/ distributional scoring") with the 8-slice build order (scoring → encoders → feature factory → OOF harness → stacked-DAG → leaderboard → search → LLM planner), the 3 expert corrections (no AutoGluon-as-component; overfitting is THE risk and CPCV/DSR/PBO is the cure; Rule-23 feature split), dep verdicts, and concrete file targets. Status: forks DECIDED, build PLANNED — awaiting owner's go-ahead to start slice 1 (Rule 26 gate; this was a planning session, no code built this turn).
 
 Rules applied: 1, 2, 4, 5, 9, 10, 11, 12, 13, 15, 16, 20, 21, 22, 23, 26.
+
+---
+
+## 2026-06-22 — Capstone defined: single-symbol crypto FROZEN forward-test (final whole-project acceptance)
+
+Owner: the FINAL verification of the entire project = take one crypto symbol, gather ALL available data types, feed the project's network, compare output vs real live movement, try different network combinations, see which predicts the next future move most accurately. Crucially: "ask the LOCAL or CLOUD LLM to get data to the ML models, not you [Claude] chat with that project's LLMs." → the project's own MLEngineerAgent (llm.py local Ollama / cloud chain) orchestrates data acquisition via its tools; Claude does not hand-feed data. Then: "search the project, plan how to do it effectively, add it to the plan, think + research online."
+
+Searched project (Rule 14): adapters/stock.py already has align_sources/align_to_grid (causal multi-source merge → (T,D)) — the exact primitive for "all data types"; agent/tools.py has web_fetch/download_file + injectable fetch. MISSING: crypto fetcher/adapter + LLM acquisition task. No ccxt/binance yet.
+
+Researched (2026): free single-symbol all-market-data path = Binance/Bybit/Kraken public REST (klines multi-TF, depth, trades, funding, OI, liquidations); on-chain/social mostly paid. Frozen-parameter out-of-sample standard: fix all data-estimated params before the test window, recursive forecasts, ≥30% reserved, walk-forward (blockchain-council; arXiv 2511.08571; PMC crypto-forecast studies).
+
+THE design subtlety flagged (Rule 26): you must NOT select the best network on the live/test data (selection-on-noise). Protocol = SEARCH/SELECT on history (DSR/CSCV-gated) → FREEZE the single best net → FORWARD-TEST the frozen net on unseen/live data, hundreds of one-step predictions, proper scoring (CRPS/log-loss/PIT) + hit-rate vs naive baseline, DSR-significant. Only the frozen forward-test = the project's accuracy. A failure is an honest valid outcome.
+
+LLM-acquisition design: adapters/crypto.py (deterministic fetchers, Rule 23) + fetch_crypto_symbol tool in agent/tools.py; MLEngineerAgent runs an acquisition task via llm.py (local/cloud) calling those tools; LLM = acquisition orchestrator, never scorer.
+
+Recorded as PLAN.md §12.1 (Capstone = Phase-8 slice 9: adapters/crypto.py + fetch tool + capstone.py freeze/forward-test harness + dashboard Capstone tab). Open dep fork: ccxt (robust, handles US geo-block on Binance.com) vs urllib-only. Status: PLANNED, no code built (planning session). Awaiting owner: dep choice + go-ahead to start building Phase-8 slice 1.
+
+Rules applied: 1, 2, 4, 5, 9, 10, 11, 12, 13, 14, 15, 16, 20, 21, 22, 23, 26.
