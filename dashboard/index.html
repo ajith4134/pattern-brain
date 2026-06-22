@@ -577,6 +577,57 @@ function dagFlow(spec) {
   return { nodes, edges };
 }
 
+// --- Capstone (Phase 8 §12.1): the freeze→forward-test — predicted distribution
+// (q10–q90 fan + median) vs the realized path on the unseen holdout, + the verdict.
+function CapstoneView() {
+  const [d, setD] = useState(null);
+  const ref = useRef(null);
+  useEffect(() => { fetch("/api/capstone").then(r => r.json()).then(setD).catch(()=>{}); }, []);
+  useEffect(() => {
+    if (!d || !d.forward_paths || !ref.current || !window.Plotly) return;
+    const p = d.forward_paths, x = p.index;
+    window.Plotly.react(ref.current, [
+      { x: x.concat([...x].reverse()), y: p.q90.concat([...p.q10].reverse()),
+        fill: "toself", fillcolor: "rgba(94,234,212,0.15)", line: { color: "transparent" },
+        name: "q10–q90", type: "scatter" },
+      { x, y: p.q50, line: { color: "#5eead4", width: 1.5 }, name: "forecast median", type: "scatter" },
+      { x, y: p.realized, line: { color: "#fbbf24", width: 1.5 }, name: "realized", type: "scatter" },
+    ], { margin: { l: 36, r: 10, t: 10, b: 24 }, height: 320, paper_bgcolor: "transparent",
+         plot_bgcolor: "transparent", font: { color: "#8aa0c8", size: 10 },
+         legend: { orientation: "h" }, xaxis: { gridcolor: "#26314f" }, yaxis: { gridcolor: "#26314f" } },
+      { displayModeBar: false, responsive: true });
+  }, [d]);
+  if (!d) return html`<div class="wrap"><div class="card"><h2>🎯 Capstone</h2>
+    <div class="body"><span class="sub">running the freeze→forward-test…</span></div></div></div>`;
+  const vColor = d.verdict === "PASS" ? "#34d399" : d.verdict === "WEAK" ? "#fbbf24" : "#f87171";
+  const f = (v, n=3) => v==null ? "—" : (+v).toFixed(n);
+  return html`<div class="wrap"><div class="col" style=${{ flex: 1 }}>
+    <div class="card">
+      <h2>🎯 Capstone — frozen network forecast vs the unseen future
+        <span style=${{ color: vColor, marginLeft: "8px" }}>${d.verdict}</span></h2>
+      <div class="body">
+        <span class="sub">${d.symbol||"series"} · searched ${d.n_nets_searched} nets on ${d.n_history} history rows →
+        FROZE the best → forward-tested on ${d.n_holdout} UNSEEN rows. The band is the forecast q10–q90; gold is reality.</span>
+        <div ref=${ref} style=${{ marginTop: "8px" }}></div>
+      </div>
+    </div>
+    <div class="card"><h2>the verdict, honestly</h2><div class="body">
+      <table class="ftable">
+        <tbody>
+          <tr><td>forward CRPS-skill vs persistence</td><td class="num" style=${{ color: d.forward_skill>0?"#34d399":"#f87171" }}>${f(d.forward_skill)}</td></tr>
+          <tr><td>Deflated Sharpe (deflated by nets tried)</td><td class="num">${f(d.forward_dsr)}</td></tr>
+          <tr><td>distribution calibrated (PIT)</td><td class="num">${d.forward_calibrated ? "✓ yes" : "✗ no"}</td></tr>
+          <tr><td>directional hit-rate (net vs baseline)</td><td class="num">${f(d.net_directional_hit,2)} vs ${f(d.baseline_directional_hit,2)}</td></tr>
+          <tr><td>next move (mean, P↑)</td><td class="num">${f(d.next_move&&d.next_move.mean,4)} (${f(d.next_move&&d.next_move.prob_up,2)})</td></tr>
+        </tbody>
+      </table>
+      <span class="sub">Honest read: a PASS here is DISTRIBUTIONAL (the net forecasts the next-return spread/uncertainty
+      better than naive persistence, DSR-significant) — direction stays ≈ chance. The whole point is that this number
+      is trustworthy: the net was FROZEN before it ever saw the holdout.</span>
+    </div></div>
+  </div></div>`;
+}
+
 function NetworkView() {
   const [d, setD] = useState(null);
   const [sel, setSel] = useState(0);
@@ -969,7 +1020,7 @@ function App() {
       <header>
         <h1>🧠 Pattern Brain</h1>
         <div class="tabs">
-          ${[["overview","Overview"],["engineer","🤖 ML Engineer"],["network","🏆 Network"],["coverage","📊 Coverage"],["galton","🎲 Galton"],["bank","Model Bank"],["evaluator","Evaluator"],
+          ${[["overview","Overview"],["engineer","🤖 ML Engineer"],["network","🏆 Network"],["capstone","🎯 Capstone"],["coverage","📊 Coverage"],["galton","🎲 Galton"],["bank","Model Bank"],["evaluator","Evaluator"],
              ["evolution","Evolution"],["pathways","Pathways"],["living","Living Graph"],
              ["adapter","Adapter"],["files","Files"]].map(([k,label]) => html`
             <button key=${k} class=${"tab" + (view===k ? " active" : "")}
@@ -986,6 +1037,7 @@ function App() {
       ${view === "overview" ? html`<${OverviewView} color=${color} setView=${setView} />`
         : view === "engineer" ? html`<${EngineerView} color=${color} />`
         : view === "network" ? html`<${NetworkView} />`
+        : view === "capstone" ? html`<${CapstoneView} />`
         : view === "coverage" ? html`<${CoverageView} />`
         : view === "galton" ? html`<${GaltonView} />`
         : view === "files" ? html`<${FilesView} />`

@@ -236,6 +236,20 @@ def test_leaderboard_endpoint():
           f"best skill {d['summary']['best_skill']} (demo={d.get('demo')})")
 
 
+def test_capstone_endpoint():
+    """Phase-8 capstone: forward-test result + per-step predicted-vs-realized paths."""
+    r = client.get("/api/capstone")
+    check(r.status_code == 200, f"/api/capstone status {r.status_code}")
+    d = r.json()
+    check(d.get("verdict") in ("PASS", "WEAK", "FAIL"), f"bad verdict {d.get('verdict')}")
+    fp = d.get("forward_paths", {})
+    check(all(k in fp for k in ("index", "realized", "q10", "q50", "q90")), "missing forward paths")
+    n = len(fp.get("index", []))
+    check(n > 0 and len(fp["q50"]) == n == len(fp["realized"]), "path arrays length mismatch")
+    check(all(a <= b for a, b in zip(fp["q10"], fp["q90"])), "q10 must be <= q90 per step")
+    print(f"  GET /api/capstone -> verdict={d['verdict']}, {n} forward steps, skill={d['forward_skill']:.3f}")
+
+
 def test_knowledge_endpoint():
     """ENG-4: /api/knowledge returns the book manifest + KB stats + LLM status."""
     r = client.get("/api/knowledge")
@@ -302,6 +316,7 @@ def main():
     test_adapter_endpoint()
     test_coverage_endpoint()
     test_leaderboard_endpoint()
+    test_capstone_endpoint()
     test_galton_endpoint()
     test_knowledge_endpoint()
     test_agent_status_and_step_and_chat()

@@ -443,6 +443,30 @@ def leaderboard_endpoint() -> JSONResponse:
     return JSONResponse(_leaderboard_payload())
 
 
+@lru_cache(maxsize=1)
+def _capstone_payload() -> dict:
+    """Phase-8 §12.1 capstone: a freeze→forward-test with per-step predicted
+    quantiles for the fan chart (small synthetic run so the tab is fast/offline;
+    the live crypto capstone is `adapters.crypto.run_crypto_capstone`)."""
+    from pattern_brain.capstone import run_capstone
+    rng = np.random.default_rng(7)
+    n = 240
+    r = np.zeros(n)
+    for t in range(1, n):
+        r[t] = 0.55 * r[t - 1] + rng.normal(scale=0.4)
+    X = np.column_stack([r, np.cumsum(r), rng.normal(size=n)])
+    return run_capstone(X, holdout_frac=0.3, strategy="random", budget=6,
+                        base_pool=["drift_forecast", "theta_forecast", "naive_mean_forecast"],
+                        min_train=45, n_samples=80, seed=0, return_paths=True,
+                        meta={"symbol": "DEMO/AR1", "source": "synthetic", "target": "return"})
+
+
+@app.get("/api/capstone")
+def capstone_endpoint() -> JSONResponse:
+    """The freeze→forward-test acceptance result + per-step predicted-vs-realized paths."""
+    return JSONResponse(_capstone_payload())
+
+
 # --------------------------------------------------- ML Engineer Agent (ENG-4)
 _AGENT = None
 _AGENT_LOCK = threading.Lock()

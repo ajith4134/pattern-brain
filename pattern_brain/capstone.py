@@ -49,7 +49,8 @@ def _next_move(spec: DAGSpec, x0: np.ndarray, X: np.ndarray, n_samples: int, see
 def run_capstone(matrix, *, holdout_frac: float = 0.3, strategy: str = "evolutionary",
                  budget: int = 24, base_pool: Optional[List[str]] = None,
                  min_train: int = 60, n_samples: int = 150, seed: int = 0,
-                 llm_chat=None, meta: Optional[Dict] = None) -> Dict:
+                 llm_chat=None, meta: Optional[Dict] = None,
+                 return_paths: bool = False) -> Dict:
     X = np.asarray(matrix, dtype=float)
     if X.ndim == 1:
         X = X.reshape(-1, 1)
@@ -108,7 +109,7 @@ def run_capstone(matrix, *, holdout_frac: float = 0.3, strategy: str = "evolutio
 
     verdict = ("PASS" if (fskill > 0 and cal["calibrated"] and dsr is not None and dsr >= 0.95)
                else "WEAK" if fskill > 0 else "FAIL")
-    return {
+    report = {
         **(meta or {}),
         "n_total": T, "n_history": split, "n_holdout": int(len(f_idx)),
         "n_nets_searched": lb.count(), "history_skill": float(best_row["crps_skill"]),
@@ -119,6 +120,12 @@ def run_capstone(matrix, *, holdout_frac: float = 0.3, strategy: str = "evolutio
         "net_directional_hit": net_dir, "baseline_directional_hit": base_dir,
         "next_move": nm, "next_price_est": next_price, "verdict": verdict,
     }
+    if return_paths:                                    # per-step fan-chart data (slice 9 dashboard)
+        qs = np.quantile(f_samp, [0.1, 0.5, 0.9], axis=1)
+        report["forward_paths"] = {
+            "index": f_idx.tolist(), "realized": f_real.tolist(),
+            "q10": qs[0].tolist(), "q50": qs[1].tolist(), "q90": qs[2].tolist()}
+    return report
 
 
 __all__ = ["run_capstone"]
