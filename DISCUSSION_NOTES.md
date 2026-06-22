@@ -1312,3 +1312,27 @@ Owner: "Do 7f batch 2." Per Rule 22, this was the next open item after 7e batch 
 **Next in order (Rule 6):** **Phase 7g** — equation/symbolic discovery (PySR/SINDy/AI-Feynman/genetic programming), the last 7-series batch, which also feeds the AlgorithmEvolver (Feature 2). Symbolic-discovery is currently the lowest-coverage family (2/6).
 
 Rules applied: 1, 2, 4, 5, 7, 13, 16, 18, 20, 21, 22, 23, 24, 25, 26.
+
+---
+
+## 2026-06-22 — Implementation: Phase 7g built (equation / symbolic DISCOVERY) — 7-series complete
+
+Owner: "Phase 7g and always read ideas generated in the last message." Applied idea #1 from the 7f-batch-2 ideas block verbatim: split 7g light-vs-dep — build the **pure-numpy** discovery engines now, defer the Julia/heavy ones. Per Rule 22 this was the last open 7-series batch.
+
+**Built (2 nodes, appended to `nodes/equation.py`, bank 159→161 light / 194→196 torch, both emit the `equation` contract coef+r2):**
+- `sindy_regression` — **SINDy** (Brunton-Proctor-Kutz, PNAS 2016): regress the standardized state's time-derivative onto a library [1, x, x², x³, sin x, cos x], then **sequentially threshold (STLSQ)** to a sparse governing ODE. Recovers the actual dynamical law, not a fitted curve.
+- `genetic_symbolic_regression` — **GP-SR**: evolve vectorized expression trees over the normalized time index (tournament selection + subtree crossover/mutation + parsimony penalty), least-squares-fit y≈a·φ(t)+b. Dependency-free counterpart to PySR/gplearn.
+
+**Relationship clarified (PLAN said "+ AlgorithmEvolver"):** these are the fast BANK-NODE form; the existing `AlgorithmEvolver` (Feature 2) is the evolutionary, Evaluator-gated form — same family, complementary, both now present.
+
+**One bug caught + fixed before done (Rule 18):** my GP helper was named `_fit`, which shadowed the `Node._fit` training hook → `predict()` dispatched into it with wrong args. Renamed to `_score_tree`. The conformance test caught it immediately.
+
+**Evidence:** `tests/test_equation_discovery.py` green — SINDy recovers **dx/dt≈−0.33·x** from a −0.3 exponential-decay ODE (1 active term, r2 0.97) vs random-walk r2 0.00; GP explains a structured quadratic (r2 1.00) far above noise (0.03) with a closed form using `t`; GP **deterministic** under a fixed seed; domain-independence clean. **All 24 suites green on BOTH interpreters** (light 161 / torch 196). Coverage **87.3%→89.0% (105/118)**; Symbolic/equation-discovery family **2/6→4/6**. PLAN.md + coverage line updated; committed + pushed.
+
+**Deferred honestly (§0b, deps):** PySR (needs Julia), AI-Feynman (heavy).
+
+**State: the whole 7-series (7a→7g) is now built**, dependency-free where possible, everything dep-bound (real Mamba, foundation TS, SSL, PySR, AI-Feynman, QAOA) deferred with reasons. The bank is 161 light / 196 torch; 12 of 17 curated families complete; coverage 89%.
+
+**Next (Rule 6 — one at a time):** owner's call. Highest-leverage non-build move = run the `MLEngineerAgent` loop over the now-196-node bank so the Evaluator gate surfaces which of the new deep/physics/equation nodes actually EARN shadow status (breadth is climbing; the owner's own caveat was "breadth isn't the hard part — the connector is"). Build-wise: the easy Neural-sequence mop-up (rnn/bilstm/seq2seq) or a 7f-b3 self-supervised tier (SimCLR/BYOL/MAE).
+
+Rules applied: 1, 2, 4, 5, 7, 18, 20, 21, 22, 23, 24, 25, 26.

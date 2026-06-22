@@ -242,3 +242,191 @@ class LinearSVRNode(_LinearLawNode):
     """Linear support-vector regression (epsilon-insensitive linear law)."""
     node_type = "linear_svr"
     def _make(self): return LinearSVR(max_iter=5000)
+
+
+# ==========================================================================
+# Phase 7g — equation / symbolic DISCOVERY (PLAN.md §11). Pure-numpy engines
+# (idea #1 from the 7f-batch-2 ideas block): SINDy (sparse identification of a
+# governing ODE) + genetic-programming symbolic regression (evolve a closed
+# form, not a fixed template). Both emit the 'equation' contract (coef + r2),
+# zero stock coupling (Rule 23). These are the fast BANK-NODE form of equation
+# discovery; AlgorithmEvolver (Feature 2) is the evolutionary, Evaluator-gated
+# form — complementary, same family. Heavy deps deferred behind §0b: PySR
+# (needs Julia) and AI-Feynman — added only when proven needed.
+# ==========================================================================
+import random as _random  # noqa: E402
+
+
+@register
+class SINDyNode(Node):
+    """SINDy — Sparse Identification of Nonlinear Dynamics (Brunton, Proctor &
+    Kutz, PNAS 2016): regress the time-derivative of the (standardized) state onto
+    a library of candidate functions [1, x, x^2, x^3, sin x, cos x], then
+    SEQUENTIALLY THRESHOLD to a sparse active set (STLSQ) — discovering the
+    governing law dx/dt = Σ ξ_i·θ_i(x) rather than merely fitting a curve. Sparsity
+    is the point: a few interpretable terms, not a dense polynomial."""
+    layer = "equation"
+    node_type = "sindy_regression"
+
+    def __init__(self, threshold: float = 0.05, iters: int = 10, **kw):
+        super().__init__(threshold=threshold, iters=iters, **kw)
+        self.threshold, self.iters = threshold, iters
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        x = X[:, 0].astype(float)
+        if len(x) < 6:
+            return Belief("equation", {"expression": "dx/dt = 0", "coef": [0.0],
+                                       "terms": ["1"], "n_active": 0, "r2": 0.0}, 0.0, self.name)
+        xs = (x - x.mean()) / (x.std() + 1e-9)
+        dx = np.gradient(xs)
+        terms = [("1", np.ones_like(xs)), ("x", xs), ("x^2", xs ** 2), ("x^3", xs ** 3),
+                 ("sin(x)", np.sin(xs)), ("cos(x)", np.cos(xs))]
+        names = [n for n, _ in terms]
+        Theta = np.column_stack([f for _, f in terms])
+        xi = np.linalg.lstsq(Theta, dx, rcond=None)[0]
+        for _ in range(self.iters):                       # STLSQ
+            small = np.abs(xi) < self.threshold
+            xi[small] = 0.0
+            active = ~small
+            if not active.any():
+                break
+            xi[active] = np.linalg.lstsq(Theta[:, active], dx, rcond=None)[0]
+        pred = Theta @ xi
+        ss_res = float(np.sum((dx - pred) ** 2))
+        ss_tot = float(np.sum((dx - dx.mean()) ** 2)) + 1e-12
+        r2 = float(max(0.0, 1.0 - ss_res / ss_tot))
+        expr = " + ".join(f"{c:.3g}*{n}" for c, n in zip(xi, names) if abs(c) > 0) or "0"
+        return Belief("equation", {"expression": "dx/dt = " + expr, "coef": xi.tolist(),
+                                   "terms": names, "n_active": int((np.abs(xi) > 0).sum()),
+                                   "r2": r2},
+                      r2, self.name)
+
+
+# ---- genetic-programming symbolic regression (vectorized expression trees) ----
+_GP_BIN = ["+", "-", "*", "/"]
+_GP_UN = ["sin", "cos", "tanh", "abs", "sq"]
+
+
+def _gp_random(rng, depth):
+    """tree = ('t',) | ('const', v) | (binop, l, r) | (unop, child)."""
+    if depth <= 0 or rng.random() < 0.3:
+        return ("t",) if rng.random() < 0.6 else ("const", round(rng.uniform(-2, 2), 3))
+    if rng.random() < 0.6:
+        return (rng.choice(_GP_BIN), _gp_random(rng, depth - 1), _gp_random(rng, depth - 1))
+    return (rng.choice(_GP_UN), _gp_random(rng, depth - 1))
+
+
+def _gp_eval(tree, t):
+    """Vectorized evaluation over the numpy time vector ``t`` (protected ops)."""
+    op = tree[0]
+    if op == "t":
+        return t
+    if op == "const":
+        return np.full_like(t, float(tree[1]))
+    with np.errstate(all="ignore"):
+        if op in _GP_UN:
+            a = _gp_eval(tree[1], t)
+            if op == "sin":  return np.sin(a)
+            if op == "cos":  return np.cos(a)
+            if op == "tanh": return np.tanh(a)
+            if op == "abs":  return np.abs(a)
+            return a * a                                  # sq
+        a, b = _gp_eval(tree[1], t), _gp_eval(tree[2], t)
+        if op == "+": return a + b
+        if op == "-": return a - b
+        if op == "*": return a * b
+        safe = np.where(np.abs(b) > 1e-9, b, 1.0)         # protected division
+        return np.where(np.abs(b) > 1e-9, a / safe, 1.0)
+
+
+def _gp_str(tree):
+    op = tree[0]
+    if op == "t":     return "t"
+    if op == "const": return f"{tree[1]:.3g}"
+    if op == "sq":    return f"({_gp_str(tree[1])})^2"
+    if op in _GP_UN:  return f"{op}({_gp_str(tree[1])})"
+    return f"({_gp_str(tree[1])} {op} {_gp_str(tree[2])})"
+
+
+def _gp_nodes(tree, acc=None, path=()):
+    acc = [] if acc is None else acc
+    acc.append((path, tree))
+    if tree[0] in _GP_BIN + _GP_UN:
+        for i, ch in enumerate(tree[1:], start=1):
+            _gp_nodes(ch, acc, path + (i,))
+    return acc
+
+
+def _gp_replace(tree, path, new):
+    if not path:
+        return new
+    tree = list(tree)
+    tree[path[0]] = _gp_replace(tree[path[0]], path[1:], new)
+    return tuple(tree)
+
+
+@register
+class GeneticSymbolicRegressionNode(Node):
+    """Genetic-programming symbolic regression: evolve a population of expression
+    trees over the normalized time index (tournament selection + subtree
+    crossover/mutation, parsimony-penalized), then fit the fittest tree φ(t) as
+    y ≈ a·φ(t) + b by least squares. Discovers a NONLINEAR closed form rather than
+    selecting from a fixed library — the dependency-free counterpart to PySR/gplearn."""
+    layer = "equation"
+    node_type = "genetic_symbolic_regression"
+
+    def __init__(self, population: int = 40, generations: int = 14, max_depth: int = 3,
+                 seed: int = 0, **kw):
+        super().__init__(population=population, generations=generations,
+                         max_depth=max_depth, seed=seed, **kw)
+        self.population, self.generations = population, generations
+        self.max_depth, self.seed = max_depth, seed
+
+    @staticmethod
+    def _score_tree(tree, t, y, ss_tot):
+        """Least-squares fit a·φ(t)+b; return (parsimony-penalized fitness, r2, coef)."""
+        phi = _gp_eval(tree, t)
+        if not np.all(np.isfinite(phi)) or np.std(phi) < 1e-9:
+            return -1e9, 0.0, [0.0, float(y.mean())]
+        F = np.column_stack([phi, np.ones_like(phi)])
+        coef, *_ = np.linalg.lstsq(F, y, rcond=None)
+        r2 = 1.0 - float(np.sum((y - F @ coef) ** 2)) / ss_tot
+        size = len(_gp_nodes(tree))
+        return r2 - 0.005 * size, float(max(0.0, r2)), coef.tolist()
+
+    def _predict(self, X: np.ndarray) -> Belief:
+        T = X.shape[0]
+        y = X[:, 0].astype(float)
+        if T < 6:
+            return Belief("equation", {"expression": "a*t+b", "coef": [0.0, float(y.mean())],
+                                       "r2": 0.0, "tree": "t", "complexity": 1}, 0.0, self.name)
+        t = np.linspace(0.0, 1.0, T)
+        ss_tot = float(np.sum((y - y.mean()) ** 2)) + 1e-12
+        rng = _random.Random(self.seed)
+        pop = [_gp_random(rng, self.max_depth) for _ in range(self.population)]
+        best = None                                        # (fitness, r2, coef, tree)
+        for _ in range(self.generations):
+            scored = []
+            for tr in pop:
+                fit, r2, coef = self._score_tree(tr, t, y, ss_tot)
+                scored.append((fit, r2, coef, tr))
+            scored.sort(key=lambda z: z[0], reverse=True)
+            if best is None or scored[0][0] > best[0]:
+                best = scored[0]
+            newpop = [scored[0][3], scored[1][3]]          # elitism
+            while len(newpop) < self.population:
+                a = max(rng.sample(scored, min(3, len(scored))), key=lambda z: z[0])[3]
+                b = max(rng.sample(scored, min(3, len(scored))), key=lambda z: z[0])[3]
+                pa, _ = rng.choice(_gp_nodes(a))
+                _, sub = rng.choice(_gp_nodes(b))
+                child = _gp_replace(a, pa, sub)            # crossover
+                if rng.random() < 0.3:                     # mutation
+                    pm, _ = rng.choice(_gp_nodes(child))
+                    child = _gp_replace(child, pm, _gp_random(rng, 2))
+                newpop.append(child)
+            pop = newpop
+        _, r2, coef, tree = best
+        expr = f"{coef[0]:.3g}*[{_gp_str(tree)}] + {coef[1]:.3g}"
+        return Belief("equation", {"expression": expr, "coef": coef, "r2": r2,
+                                   "tree": _gp_str(tree), "complexity": len(_gp_nodes(tree))},
+                      r2, self.name)
