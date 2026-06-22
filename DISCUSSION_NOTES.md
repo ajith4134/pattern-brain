@@ -1263,3 +1263,25 @@ We are **~123 of the ~500 target nodes**. The architecture (Part B) is done; the
 **Sources:** arxiv.org/abs/2501.15615 (deterministic RC), nature.com/articles/s41598-025-98172-z, pubs.aip.org AIP Chaos 27:121102 (Lyapunov-from-data), arxiv.org/abs/1907.06151 + 2206.10419 (quadratic Hawkes → rough vol), researchgate "Volatility is rough". Earlier PLAN §5 cats 21–31 already cite the econophysics/energy-based/TDA/quantum literature.
 
 Rules applied: 1, 2, 4, 5, 9, 10, 11, 13, 14, 16, 20, 21, 24.
+
+---
+
+## 2026-06-22 — Implementation: Phase 7e BATCH 3 built (continue-the-plan resume)
+
+Owner: "read all files in the pattern brain and continue the plan implementation." Read RULES.md, README.md, PLAN.md, the code. Per Rule 22 (implement in PLAN order, no skipping), the next open item was **Phase 7e batch 3** (PLAN §11), previously tagged TODO "(needs ripser/gudhi)".
+
+**Decision (Rule 13/16 — steelman the rejected option):** the TODO assumed persistent homology needs `ripser`/`gudhi`. Steelmanned that path: a real Rips filtration (H1 loops) genuinely does need those C libs. But for a **time series**, the natural and *exact* TDA is **0-dim sublevel-set persistence of the 1-D Morse function** — computable in pure numpy via an elder-rule union-find merge tree, no deps. So I built the dependency-free H0 version now (honest scope: H1 deferred, §0b heavy-deps-optional) rather than blocking the whole batch on an install. Same reasoning let quadratic-Hawkes / rough-vol / SOC all be pure-numpy.
+
+**Built (4 nodes, `physics.py`, bank 155→159 light / 174→178 torch, all `signal`-conformant):**
+- `quadratic_hawkes` — QARCH squared-return feedback + the **Zumbach effect** (past trend² → future vol minus the reverse = time-reversal asymmetry linear Hawkes/GARCH miss). Endogeneity/reflexivity probe.
+- `rough_volatility` — Gatheral-Jaisson-Rosenbaum (2018): Hurst of the **log-vol** path via the q=2 variogram (empirically H≈0.1, "vol is rough"), with the level-series fBm Hurst for contrast.
+- `soc_criticality` — Bak-Tang-Wiesenfeld self-organized criticality: threshold-excursion avalanches → Clauset power-law exponent + a scale-free score.
+- `persistent_homology` — exact 0-dim sublevel-set TDA, pure-numpy elder-rule merge tree → persistence diagram, total/max persistence, normalized persistence entropy.
+
+**Real fix surfaced (Rule 14/18):** SOC's first threshold (`median+std`) made a *smooth* low-noise series emit MORE tiny avalanches than a bursty one — count is not the SOC signature — and a `max/min` span saturated to 1.0 for both. Replaced with a fixed-rate high-quantile threshold + a `max/median` heavy-tail dispersion, so the **scale-free size distribution** is the discriminator (bursty 1.00 > smooth 0.39). This was caught by the behavioral test before marking done — exactly the Rule-25 step-4 self-check working.
+
+**Evidence:** `tests/test_physics.py` extended (4 conformance + 4 behavioral tests); ALL 22 suites green on BOTH interpreters (light 159 / torch 178). Dashboard: nodes surface automatically in Model Bank + 📊 Coverage tabs (physics family 9→**11/14**; curated coverage now **90/118 = 76.3%**, 178 torch nodes); endpoints re-verified via the ASGI TestClient (no front-end change → no Playwright re-run). PLAN.md §11 updated, committed + pushed (Rule 24).
+
+**Next in order (Rule 6 — one at a time):** Phase **7f batch 2** (torch — Informer/Autoformer/FEDformer, real Mamba/S4, temporal-GNN, SAC/TD3, GAN/normalizing-flows, Hopfield/Boltzmann energy nets, PINN/Neural-ODE/FNO, foundation TS) OR **7g** equation discovery (PySR/SINDy/AI-Feynman). 7f is the bigger coverage unlock (closes the Transformers/SSM/Graph/Deep-RL/Generative gaps).
+
+Rules applied: 1, 2, 4, 5, 7, 13, 14, 16, 18, 20, 21, 22, 23, 24, 25, 26.
