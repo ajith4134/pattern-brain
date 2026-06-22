@@ -538,6 +538,44 @@ function BankView({ color }) {
     </div>`;
 }
 
+// --- Network leaderboard (Phase 8 §12 slice 6): which Stacked-DAG combinations
+// score best on the distributional CRPS, ranked, with the anti-overfit guard (skill
+// vs the naive baseline + DSR-significance).
+function NetworkView() {
+  const [d, setD] = useState(null);
+  useEffect(() => { fetch("/api/leaderboard").then(r => r.json()).then(setD).catch(()=>{}); }, []);
+  if (!d) return html`<div class="wrap"><div class="card"><h2>🏆 Network leaderboard</h2>
+    <div class="body"><span class="sub">scoring DAGs…</span></div></div></div>`;
+  const s = d.summary || {};
+  return html`<div class="wrap"><div class="col" style=${{ flex: 1 }}>
+    <div class="card">
+      <h2>🏆 Stacked-DAG leaderboard ${d.demo ? html`<span class="sub">(demo — slice 7 search will populate)</span>` : ""}</h2>
+      <div class="body">
+        <span class="sub">runs ${s.n_runs} · distinct nets ${s.n_specs} · beat baseline ${s.n_beat_baseline} · DSR-significant ${s.n_dsr_significant}
+        · best skill ${s.best_skill==null ? "—" : (+s.best_skill).toFixed(3)} (${s.best_combiner||"—"})</span>
+        <table class="ftable" style=${{ marginTop: "10px" }}>
+          <thead><tr><th>#</th><th>combiner</th><th>nodes</th><th class="num">CRPS</th>
+            <th class="num">skill</th><th class="num">calib KS</th><th>layers</th></tr></thead>
+          <tbody>
+            ${(d.top||[]).map((r,i) => html`<tr key=${i}>
+              <td>${i+1}</td><td>${r.combiner}</td><td>${r.n_nodes}</td>
+              <td class="num">${(+r.mean_crps).toFixed(3)}</td>
+              <td class="num" style=${{ color: r.crps_skill>0 ? "#34d399" : "#f87171" }}>${(+r.crps_skill).toFixed(3)}</td>
+              <td class="num">${(+r.calib_ks).toFixed(3)}${r.calibrated ? " ✓" : ""}</td>
+              <td><span class="sub">${JSON.parse(r.spec_json).layers.map(l=>l.join("+")).join(" → ")}</span></td>
+            </tr>`)}
+          </tbody>
+        </table>
+        ${(d.top||[]).length===0 ? html`<span class="sub">no runs yet — the slice-7 search will fill this.</span>` : ""}
+      </div>
+    </div>
+    <div class="card"><h2>anti-overfit guard</h2><div class="body"><span class="sub">
+      "skill" = CRPS improvement over the naive persistence baseline (green = actually beats nothing).
+      The slice-7 search ranks by the DSR-deflated score over the number of nets tried — so a high score
+      from data-mining many combinations does not win unless it survives selection-bias deflation.</span></div></div>
+  </div></div>`;
+}
+
 // --- Coverage meter: catalog-vs-built per family (✅/🟡/❌) toward the ~500-node goal.
 function CoverageView() {
   const [d, setD] = useState(null);
@@ -876,7 +914,7 @@ function App() {
       <header>
         <h1>🧠 Pattern Brain</h1>
         <div class="tabs">
-          ${[["overview","Overview"],["engineer","🤖 ML Engineer"],["coverage","📊 Coverage"],["galton","🎲 Galton"],["bank","Model Bank"],["evaluator","Evaluator"],
+          ${[["overview","Overview"],["engineer","🤖 ML Engineer"],["network","🏆 Network"],["coverage","📊 Coverage"],["galton","🎲 Galton"],["bank","Model Bank"],["evaluator","Evaluator"],
              ["evolution","Evolution"],["pathways","Pathways"],["living","Living Graph"],
              ["adapter","Adapter"],["files","Files"]].map(([k,label]) => html`
             <button key=${k} class=${"tab" + (view===k ? " active" : "")}
@@ -892,6 +930,7 @@ function App() {
 
       ${view === "overview" ? html`<${OverviewView} color=${color} setView=${setView} />`
         : view === "engineer" ? html`<${EngineerView} color=${color} />`
+        : view === "network" ? html`<${NetworkView} />`
         : view === "coverage" ? html`<${CoverageView} />`
         : view === "galton" ? html`<${GaltonView} />`
         : view === "files" ? html`<${FilesView} />`

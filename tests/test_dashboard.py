@@ -221,6 +221,21 @@ def test_galton_endpoint():
     print(f"  GET /api/galton -> {d['balls']} balls, {d['rows']} rows, peak near bin {peak}")
 
 
+def test_leaderboard_endpoint():
+    """Phase-8 Stacked-DAG leaderboard: summary + ranked rows (demo if unpopulated)."""
+    r = client.get("/api/leaderboard")
+    check(r.status_code == 200, f"/api/leaderboard status {r.status_code}")
+    d = r.json()
+    check("summary" in d and "top" in d, "leaderboard payload missing summary/top")
+    check(isinstance(d["top"], list) and len(d["top"]) >= 1, "leaderboard should have >=1 row")
+    row = d["top"][0]
+    for k in ("combiner", "n_nodes", "mean_crps", "crps_skill", "spec_json"):
+        check(k in row, f"leaderboard row missing {k}")
+    check(d["summary"]["n_runs"] >= 1, "summary n_runs should be >=1")
+    print(f"  GET /api/leaderboard -> {d['summary']['n_runs']} runs, "
+          f"best skill {d['summary']['best_skill']} (demo={d.get('demo')})")
+
+
 def test_knowledge_endpoint():
     """ENG-4: /api/knowledge returns the book manifest + KB stats + LLM status."""
     r = client.get("/api/knowledge")
@@ -286,6 +301,7 @@ def main():
     test_conformance_endpoint()
     test_adapter_endpoint()
     test_coverage_endpoint()
+    test_leaderboard_endpoint()
     test_galton_endpoint()
     test_knowledge_endpoint()
     test_agent_status_and_step_and_chat()

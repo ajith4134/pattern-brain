@@ -409,6 +409,40 @@ def coverage_endpoint() -> JSONResponse:
     return JSONResponse(pb.coverage())
 
 
+@lru_cache(maxsize=1)
+def _leaderboard_payload() -> dict:
+    """Phase-8 §12 slice 6: the Stacked-DAG leaderboard. Shows the persistent
+    leaderboard if the search has populated it; otherwise scores a couple of small
+    demo DAGs on a synthetic series (in-memory) so the tab is alive before slice 7."""
+    from pattern_brain.leaderboard import Leaderboard
+    from pattern_brain.network import DAGSpec, StackedDAG
+    real = Leaderboard()
+    if real.count() > 0:
+        out = {"demo": False, "summary": real.summary(), "top": real.top(15)}
+        real.close()
+        return out
+    real.close()
+    rng = np.random.default_rng(3)
+    a = np.zeros(150)
+    for t in range(1, 150):
+        a[t] = 0.6 * a[t - 1] + rng.normal(scale=0.5)
+    X = a.reshape(-1, 1)
+    demo = Leaderboard(":memory:")
+    for spec in (DAGSpec([["drift_forecast"]], "mixture"),
+                 DAGSpec([["drift_forecast", "theta_forecast"]], "mixture"),
+                 DAGSpec([["drift_forecast", "theta_forecast", "naive_mean_forecast"]], "stacked")):
+        demo.record(spec, StackedDAG(spec, min_train=40, n_samples=80).score(X), dataset_id="demo_ar1")
+    out = {"demo": True, "summary": demo.summary(), "top": demo.top(15)}
+    demo.close()
+    return out
+
+
+@app.get("/api/leaderboard")
+def leaderboard_endpoint() -> JSONResponse:
+    """Phase-8 Stacked-DAG leaderboard: which network combinations score best."""
+    return JSONResponse(_leaderboard_payload())
+
+
 # --------------------------------------------------- ML Engineer Agent (ENG-4)
 _AGENT = None
 _AGENT_LOCK = threading.Lock()
