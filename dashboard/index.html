@@ -877,14 +877,20 @@ function EngineerView({ color }) {
       setStatus(r.status);
     } finally { setBusy(false); }
   };
+  const [chatBusy, setChatBusy] = useState(false);
   const send = async () => {
-    const m = msg.trim(); if (!m) return;
+    const m = msg.trim(); if (!m || chatBusy) return;
     setChat(c => [...c, { role: "user", content: m }]); setMsg("");
-    const r = await fetch("/api/agent/chat", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: m }) }).then(x => x.json());
-    setChat(c => [...c, { role: "assistant", content: r.reply }]);
-    setPending(r.pending || null);
+    setChatBusy(true);
+    try {
+      const r = await fetch("/api/agent/chat", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: m }) }).then(x => x.json());
+      setChat(c => [...c, { role: "assistant", content: r.reply }]);
+      setPending(r.pending || null);
+    } catch (e) {
+      setChat(c => [...c, { role: "assistant", content: "⚠ request failed: " + e }]);
+    } finally { setChatBusy(false); }
   };
   const confirmAct = async (approve) => {
     if (!pending) return;
@@ -977,12 +983,14 @@ function EngineerView({ color }) {
             <button onClick=${() => confirmAct(true)} disabled=${actBusy}>${actBusy ? "running…" : "✓ Confirm & run"}</button>
             <button onClick=${() => confirmAct(false)} disabled=${actBusy} style=${{ marginLeft: "6px" }}>✕ Cancel</button>
           </div>` : null}
+          ${chatBusy ? html`<div class="sub" style=${{ margin: "4px 0", color: "#5eead4" }}>🤔 thinking… (reading state / calling the model)</div>` : null}
           <div style=${{ display: "flex", gap: "8px" }}>
-            <input style=${inp} placeholder=${'message the agent… (try "run a DAG search on BTC/USD")'} value=${msg}
+            <input style=${{ ...inp, opacity: chatBusy ? 0.6 : 1 }} disabled=${chatBusy}
+                   placeholder=${'message the agent… (try "run a DAG search on BTC/USD")'} value=${msg}
                    onInput=${e => setMsg(e.target.value)}
                    onChange=${e => setMsg(e.target.value)}
                    onKeyDown=${e => { if (e.key === "Enter") send(); }} />
-            <button onClick=${send}>send</button>
+            <button onClick=${send} disabled=${chatBusy}>${chatBusy ? "…" : "send"}</button>
           </div>
           <div class="hint" style=${{ marginTop: "6px" }}>Read-only by default; "run …" requests are gated — they execute only after you Confirm.</div>
         </div>

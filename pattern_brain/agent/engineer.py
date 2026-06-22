@@ -323,7 +323,7 @@ class MLEngineerAgent:
                    "retrieve_knowledge", "recall_memory", "read_leaderboard", "read_capstone")
 
     def chat(self, message: str, history: Optional[List[Dict[str, str]]] = None,
-             max_tool_calls: int = 6) -> str:
+             max_tool_calls: int = 3, max_seconds: float = 35.0) -> str:
         """Converse like a coding assistant — FULL READ ACCESS to the project files AND
         the live results (search leaderboard, capstone forward-test, bank state). A
         ReAct loop lets the LLM read/search before answering; each Q&A is cached to
@@ -366,7 +366,10 @@ class MLEngineerAgent:
         convo = [{"role": "system", "content": sys}] + (history or []) + \
                 [{"role": "user", "content": message}]
         answer = None
+        deadline = time.time() + max(5.0, max_seconds)    # hard wall-clock cap (dashboard responsiveness)
         for _ in range(max(1, max_tool_calls)):
+            if time.time() > deadline:                    # stop looping; fall through to a final answer
+                break
             reply = self.llm_chat(convo)
             action = self._parse_tool(reply)
             if action is None:
@@ -383,9 +386,9 @@ class MLEngineerAgent:
                 except Exception as e:
                     result = {"error": str(e)}
             convo.append({"role": "assistant", "content": reply})
-            convo.append({"role": "user", "content": f"TOOL RESULT [{name}]:\n{json.dumps(result)[:6500]}"})
+            convo.append({"role": "user", "content": f"TOOL RESULT [{name}]:\n{json.dumps(result)[:3000]}"})
         if answer is None:
-            convo.append({"role": "user", "content": "Now give your final answer in plain prose."})
+            convo.append({"role": "user", "content": "Now give your final answer in plain prose (no tools)."})
             answer = self.llm_chat(convo)
         try:                                                 # cache the Q&A (builds project knowledge)
             self.toolbox.remember(f"Q: {message}\nA: {answer}", kind="chat_qa")

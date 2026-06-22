@@ -640,9 +640,15 @@ async def agent_chat(request: Request) -> JSONResponse:
     message = (body or {}).get("message", "")
     history = (body or {}).get("history", [])
     a = _agent()
-    # chat() blocks on LLM HTTP calls (a multi-step ReAct loop). Run it OFF the
-    # event loop so one slow/hung backend can't freeze the whole dashboard.
-    reply = await asyncio.to_thread(a.chat, message, history)
+    # chat() blocks on LLM HTTP calls (a bounded ReAct loop). Run it OFF the event
+    # loop so one slow/hung backend can't freeze the whole dashboard, and cap the
+    # total wait so the endpoint ALWAYS returns (the agent's own deadline is lower).
+    try:
+        reply = await asyncio.wait_for(asyncio.to_thread(a.chat, message, history), timeout=70)
+    except asyncio.TimeoutError:
+        return JSONResponse({"reply": "⏳ The agent took too long to respond (a model backend may be "
+                             "slow right now). Please try again — simpler questions answer fastest.",
+                             "pending": None})
     return JSONResponse({"reply": reply, "pending": a.pending_action()})
 
 
