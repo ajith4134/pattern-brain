@@ -631,14 +631,23 @@ function CapstoneView() {
 // Full-bank view: ALL modules in their 8 functional-layer columns + the allowed
 // forward (layer-adjacent) connections — the whole "brain" / search space.
 const _LAYER_ORDER = ["signal","noise","pattern","sequence","probability","equation","decision","rl"];
-function bankFlow(bankNodes) {
+function bankNodeStyle(layer, isWinner, sk) {
+  const base = nodeStyle(layer, false);
+  const skillPos = sk && sk.skill != null && sk.skill > 0;
+  return { ...base, fontSize: "8px", width: 158, padding: "2px 5px",
+    opacity: isWinner ? 1 : 0.28,
+    border: isWinner ? "2px solid #fde047" : base.border,
+    boxShadow: isWinner ? "0 0 11px #fde047" : (skillPos ? "0 0 5px #34d399" : "none") };
+}
+function bankFlow(bankNodes, winnerSet, skills) {
+  winnerSet = winnerSet || new Set(); skills = skills || {};
   const byLayer = {};
   (bankNodes || []).forEach(n => { (byLayer[n.layer] = byLayer[n.layer] || []).push(n); });
   const layers = _LAYER_ORDER.filter(l => byLayer[l]).concat(Object.keys(byLayer).filter(l => !_LAYER_ORDER.includes(l)));
   const nodes = [], edges = [];
   layers.forEach((l, li) => byLayer[l].forEach((n, ni) => {
     nodes.push({ id: n.node_type, position: { x: li*240, y: ni*30 },
-      data: { label: n.node_type }, style: { ...nodeStyle(l, false), fontSize: "8px", width: 158, padding: "2px 5px" },
+      data: { label: n.node_type }, style: bankNodeStyle(l, winnerSet.has(n.node_type), skills[n.node_type]),
       sourcePosition: "right", targetPosition: "left" });
   }));
   for (let li = 0; li < layers.length - 1; li++) {
@@ -646,7 +655,7 @@ function bankFlow(bankNodes) {
     cur.forEach((n, ni) => { for (let j = 0; j < 2; j++) {
       const t = nxt[(ni + j) % nxt.length];
       edges.push({ id: `${n.node_type}>${t.node_type}.${j}`, source: n.node_type, target: t.node_type,
-        style: { stroke: color(layers[li]), strokeWidth: 0.5, opacity: 0.22 } });
+        style: { stroke: color(layers[li]), strokeWidth: 0.5, opacity: 0.18 } });
     }});
   }
   return { nodes, edges };
@@ -657,14 +666,26 @@ function NetworkView() {
   const [sel, setSel] = useState(0);
   const [mode, setMode] = useState("winner");
   const [bank, setBank] = useState(null);
+  const [skill, setSkill] = useState(null);
+  const [selNode, setSelNode] = useState(null);
   useEffect(() => { fetch("/api/leaderboard").then(r => r.json()).then(setD).catch(()=>{}); }, []);
   useEffect(() => { if (mode === "bank" && !bank) fetch("/api/bank").then(r => r.json()).then(setBank).catch(()=>{}); }, [mode]);
+  useEffect(() => {                                   // poll the background OOF-skill sweep
+    if (mode !== "bank") return; let stop = false;
+    const tick = () => fetch("/api/node_skill").then(r => r.json()).then(x => {
+      if (stop) return; setSkill(x); if (!x.ready) setTimeout(tick, 3000);
+    }).catch(()=>{});
+    tick(); return () => { stop = true; };
+  }, [mode]);
   if (!d) return html`<div class="wrap"><div class="card"><h2>🏆 Network</h2>
     <div class="body"><span class="sub">scoring DAGs…</span></div></div></div>`;
   const s = d.summary || {}, top = d.top || [];
   const spec = top.length ? JSON.parse(top[Math.min(sel, top.length-1)].spec_json) : null;
-  const flow = mode === "bank" ? (bank ? bankFlow(bank.nodes) : { nodes: [], edges: [] })
+  const winnerSet = new Set(spec ? spec.layers.flat() : []);
+  const skills = (skill && skill.skills) || {};
+  const flow = mode === "bank" ? (bank ? bankFlow(bank.nodes, winnerSet, skills) : { nodes: [], edges: [] })
                                : (spec ? dagFlow(spec) : { nodes: [], edges: [] });
+  const selSkill = selNode ? skills[selNode] : null;
   return html`<div class="wrap"><div class="col" style=${{ flex: 1 }}>
     <div class="card">
       <h2>🧠 The network — how the model modules interconnect</h2>
@@ -674,10 +695,17 @@ function NetworkView() {
           <button class=${"tab" + (mode==="bank" ? " active" : "")} onClick=${() => setMode("bank")}>full bank — all ${bank ? bank.n_nodes : "190+"} modules</button>
         </div>
         <span class="sub">${mode === "bank"
-          ? html`All ${bank ? bank.n_nodes : ""} ML modules in their 8 functional layers (left→right: signal → noise → pattern → sequence → probability → equation → decision → rl) with the allowed forward connections — the whole "brain" / search space. The system does NOT fuse all modules into one predictor (that would massively overfit); it SEARCHES this space and selects the small winning sub-network (see "winning network").`
+          ? html`All ${bank ? bank.n_nodes : ""} ML modules in their 8 functional layers (left→right) — the whole "brain" / search space. <b style=${{ color: "#fde047" }}>Gold = the winning sub-network's modules (the "neurons that fired")</b>; <b style=${{ color: "#34d399" }}>green glow = a forecaster that beats baseline</b>; dim = available but unused. The system SEARCHES this space and selects the small winner — it never fuses all 196. Click any module for its skill.`
           : html`The winning Stacked-DAG #${Math.min(sel,top.length-1)+1}: raw data → base ML modules → ${spec ? spec.combiner : ""} combiner → predictive distribution. Click a leaderboard row to draw a different net.`}</span>
+        ${mode === "bank" && skill && !skill.ready ? html`<div><span class="sub">⏳ scoring modules (out-of-fold)… ${skill.n_done}/${skill.n_total||"…"}</span></div>` : ""}
+        ${mode === "bank" && selNode ? html`<div style=${{ marginTop: "6px", padding: "5px 8px", background: "var(--panel2)", borderRadius: "6px" }}>
+          <b>${selNode}</b> — ${selSkill
+            ? html`OOF CRPS-skill <b style=${{ color: (selSkill.skill||0)>0 ? "#34d399" : "#f87171" }}>${selSkill.skill==null ? "—" : (+selSkill.skill).toFixed(3)}</b> · CRPS ${selSkill.crps==null?"—":(+selSkill.crps).toFixed(3)} · n=${selSkill.n}`
+            : html`<span class="sub">not a forecaster — contributes as a FEATURE to the stack, not as a direct predictor (no forecast skill).</span>`}
+        </div>` : ""}
         <div id="dag" style=${{ height: "420px", border: "1px solid var(--line)", borderRadius: "8px", marginTop: "8px" }}>
           ${flow.nodes.length ? html`<${ReactFlow} nodes=${flow.nodes} edges=${flow.edges} fitView
+              onNodeClick=${(e, node) => setSelNode(node.id)}
               proOptions=${{ hideAttribution: true }} nodesDraggable=${false} nodesConnectable=${false} minZoom=${0.05}>
               <${Background} color="#26314f" gap=${20} />
               <${Controls} showInteractive=${false} />

@@ -467,6 +467,51 @@ def capstone_endpoint() -> JSONResponse:
     return JSONResponse(_capstone_payload())
 
 
+# --- per-node OOF skill (slice 4): which of the modules actually forecast? --------
+# Computed in a BACKGROUND THREAD (the sweep is slow) so this endpoint never blocks
+# the single-process server; the frontend polls until ready.
+_NODE_SKILL = {"ready": False, "started": False, "skills": {}, "n_total": 0, "n_done": 0}
+_NODE_SKILL_LOCK = threading.Lock()
+
+
+def _compute_node_skill() -> None:
+    from pattern_brain.oof import OOFHarness, forecast_node_types
+    rng = np.random.default_rng(5)
+    n = 160
+    a = np.zeros(n)
+    for t in range(1, n):
+        a[t] = 0.6 * a[t - 1] + rng.normal(scale=0.5)
+    X = a.reshape(-1, 1)
+    h = OOFHarness(min_train=40, stride=5, n_samples=50, seed=0)
+    try:
+        nts = forecast_node_types()
+    except Exception:
+        nts = []
+    _NODE_SKILL["n_total"] = len(nts)
+    for nt in nts:
+        try:
+            s = h.score_node(nt, X)
+            sk, cr = s["crps_skill"], s["mean_crps"]
+            _NODE_SKILL["skills"][nt] = {
+                "skill": (float(sk) if sk == sk else None),
+                "crps": (float(cr) if cr == cr else None), "n": int(s["n"])}
+        except Exception:
+            pass
+        _NODE_SKILL["n_done"] += 1
+    _NODE_SKILL["ready"] = True
+
+
+@app.get("/api/node_skill")
+def node_skill_endpoint() -> JSONResponse:
+    """Per-forecast-node out-of-fold CRPS-skill (background-computed, polled).
+    Non-forecast modules simply have no entry (they contribute as features, not forecasts)."""
+    with _NODE_SKILL_LOCK:
+        if not _NODE_SKILL["started"]:
+            _NODE_SKILL["started"] = True
+            threading.Thread(target=_compute_node_skill, daemon=True).start()
+    return JSONResponse({k: _NODE_SKILL[k] for k in ("ready", "n_total", "n_done", "skills")})
+
+
 # --------------------------------------------------- ML Engineer Agent (ENG-4)
 _AGENT = None
 _AGENT_LOCK = threading.Lock()

@@ -39,6 +39,37 @@ TextCompleter = Callable[..., str]
 # Project-local model (Block 56). Default is the 7B (best speed/quality on a
 # no-GPU box); set OLLAMA_MODEL=qwen2.5-coder:14b for higher quality when you can
 # accept slower replies — no code change needed.
+def load_project_env(path: str = None) -> int:
+    """Load the project-local ``.env`` (Rule 1, in-folder) into ``os.environ`` so the
+    cloud-LLM API keys + OLLAMA_HOST are actually available. Dependency-free; only
+    sets vars NOT already in the environment (real env wins). Returns how many it set.
+    Called once on import so every consumer (dashboard, agent, scripts) gets the keys."""
+    if path is None:
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+    n = 0
+    try:
+        with open(path) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k, v = k.strip(), v.strip().strip('"').strip("'")
+                if k and k not in os.environ:
+                    os.environ[k] = v
+                    n += 1
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    # The project-local Ollama (tools/run_ollama.sh) serves on 11435, not the
+    # default 11434 — point at it unless the user set OLLAMA_HOST explicitly.
+    os.environ.setdefault("OLLAMA_HOST", "http://127.0.0.1:11435")
+    return n
+
+
+load_project_env()
+
 DEFAULT_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5-coder:7b")
 DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"  # small/fast is ideal for routing
 

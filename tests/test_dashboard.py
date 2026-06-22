@@ -250,6 +250,17 @@ def test_capstone_endpoint():
     print(f"  GET /api/capstone -> verdict={d['verdict']}, {n} forward steps, skill={d['forward_skill']:.3f}")
 
 
+def test_node_skill_endpoint():
+    """Per-node OOF skill is computed in a background thread; the endpoint returns
+    a progress payload immediately (non-blocking)."""
+    r = client.get("/api/node_skill")
+    check(r.status_code == 200, f"/api/node_skill status {r.status_code}")
+    d = r.json()
+    check(all(k in d for k in ("ready", "n_total", "n_done", "skills")), "node_skill payload incomplete")
+    check(isinstance(d["skills"], dict), "skills should be a dict")
+    print(f"  GET /api/node_skill -> ready={d['ready']}, {d['n_done']}/{d['n_total']} (non-blocking)")
+
+
 def test_knowledge_endpoint():
     """ENG-4: /api/knowledge returns the book manifest + KB stats + LLM status."""
     r = client.get("/api/knowledge")
@@ -317,6 +328,7 @@ def main():
     test_coverage_endpoint()
     test_leaderboard_endpoint()
     test_capstone_endpoint()
+    test_node_skill_endpoint()
     test_galton_endpoint()
     test_knowledge_endpoint()
     test_agent_status_and_step_and_chat()
