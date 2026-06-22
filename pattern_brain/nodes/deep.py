@@ -65,6 +65,11 @@ if _HAS_TORCH:
         def _build(self, D: int, p: int):  # pragma: no cover - overridden
             raise NotImplementedError
 
+        def _extra_loss(self, pred, Xn, Yn):
+            """Optional regularizer added to the MSE data loss (default: none).
+            Overridden by physics-informed nodes (PINN) to inject a prior."""
+            return 0.0
+
         def _predict(self, X: np.ndarray) -> Belief:
             T, D = X.shape
             p = max(2, min(self.lag, max(2, T // 4)))
@@ -86,10 +91,11 @@ if _HAS_TORCH:
             for _ in range(self.epochs):
                 opt.zero_grad()
                 pred = net(Xn)
-                loss = lossf(pred, Yn)
+                data_loss = lossf(pred, Yn)
+                loss = data_loss + self._extra_loss(pred, Xn, Yn)
                 loss.backward()
                 opt.step()
-                last = float(loss.item())
+                last = float(data_loss.item())
             net.eval()
             with torch.no_grad():
                 win = torch.tensor(X[T - p:T], dtype=torch.float32).unsqueeze(0)
@@ -553,14 +559,14 @@ if _HAS_TORCH:
         A = A + np.eye(X.shape[0], dtype=np.float32)     # self-loops
         return A / A.sum(1, keepdims=True)
 
-    def _graph_reconstruct(X, attention, hidden=12, epochs=80):
+    def _graph_reconstruct(X, attention, hidden=12, epochs=80, adj_fn=None):
         _seed()
         T, D = X.shape
         if T < 6:
             return X.copy()
         mu, sd = X.mean(0), X.std(0) + 1e-6
         Xt = torch.tensor((X - mu) / sd, dtype=torch.float32)
-        A = torch.tensor(_knn_adj(X), dtype=torch.float32)
+        A = torch.tensor((adj_fn or _knn_adj)(X), dtype=torch.float32)
         W1 = nn.Linear(D, hidden); W2 = nn.Linear(hidden, D)
         att = nn.Linear(2 * hidden, 1) if attention else None
         params = list(W1.parameters()) + list(W2.parameters()) + (list(att.parameters()) if att else [])
@@ -741,4 +747,605 @@ if _HAS_TORCH:
             a = int(np.argmax(probs))
             return Belief("action", {"action": a - 1, "policy": [float(v) for v in probs],
                                      "labels": ["short", "flat", "long"], "model": "PPO"},
+                          float(max(0.0, min(1.0, probs[a]))), self.name)
+
+
+# ==========================================================================
+# Phase 7f — BATCH 2 (PLAN.md §11): the deep-tier breadth fill. All pure-torch
+# (no new heavy deps): advanced Transformers (Informer/Autoformer/FEDformer),
+# more state-space (S4/S5), Fourier Neural Operator, Neural-ODE + PINN,
+# Temporal-GNN, energy nets (modern Hopfield / RBM), deep generative
+# (GAN / normalizing-flow anomaly), and continuous-control-family deep-RL
+# (SAC / TD3 / A3C, discrete short/flat/long adaptations). Each behind the
+# generic Node interface, emitting EXISTING interlingua types (Rule 23 / Block 46).
+# Deferred (need external deps/downloads, §0b): real Mamba/S4 CUDA kernels
+# (mamba-ssm) and foundation TS models (Chronos / TimesFM).
+# ==========================================================================
+if _HAS_TORCH:
+
+    def _series_decomp(x, k):
+        """Autoformer/FEDformer trend-seasonal decomposition: trend = causal-padded
+        moving average (odd kernel), seasonal = x - trend. x: (B, p, D)."""
+        p = x.shape[1]
+        k = max(3, min(k, p))
+        k = k if k % 2 == 1 else k - 1
+        pad = k // 2
+        xt = nn.functional.pad(x.transpose(1, 2), (pad, pad), mode="replicate")
+        trend = nn.functional.avg_pool1d(xt, k, stride=1).transpose(1, 2)[:, :p, :]
+        return trend, x - trend
+
+    # ---------- advanced Transformers ----------
+    class _InformerNet(nn.Module):
+        """Informer ProbSparse-lite: only the top-u 'active' queries (highest
+        sparsity score max-mean) get full attention; the rest collapse to the mean
+        value — the O(L log L) sparse-attention idea, in miniature."""
+        def __init__(self, D, hidden, p):
+            super().__init__()
+            self.proj = nn.Linear(D, hidden)
+            self.q = nn.Linear(hidden, hidden)
+            self.k = nn.Linear(hidden, hidden)
+            self.v = nn.Linear(hidden, hidden)
+            self.head = nn.Linear(hidden, D)
+            self.u = max(1, int(np.ceil(np.log2(p + 1))))
+
+        def forward(self, x):                              # (B, p, D)
+            h = torch.tanh(self.proj(x))
+            Q, K, V = self.q(h), self.k(h), self.v(h)
+            scores = Q @ K.transpose(1, 2) / (K.shape[-1] ** 0.5)   # (B,p,p)
+            M = scores.max(-1).values - scores.mean(-1)            # query sparsity (B,p)
+            u = min(self.u, scores.shape[1])
+            topu = torch.topk(M, u, dim=1).indices                # (B,u)
+            full = torch.softmax(scores, -1) @ V                  # (B,p,H)
+            meanV = V.mean(1, keepdim=True).expand_as(full)
+            mask = torch.zeros_like(M).scatter(1, topu, 1.0).unsqueeze(-1)
+            out = mask * full + (1 - mask) * meanV
+            return self.head(out[:, -1, :])
+
+    class _AutoformerNet(nn.Module):
+        """Autoformer-lite: series-decomposition block (its signature) — a
+        transformer encodes the seasonal part, a linear head extrapolates the trend,
+        and the two are summed."""
+        def __init__(self, D, hidden, p):
+            super().__init__()
+            self.k = max(3, p // 4)
+            self.proj = nn.Linear(D, hidden)
+            layer = nn.TransformerEncoderLayer(d_model=hidden, nhead=1,
+                                               dim_feedforward=hidden * 2, batch_first=True)
+            self.enc = nn.TransformerEncoder(layer, num_layers=1)
+            self.head = nn.Linear(hidden, D)
+            self.trend_head = nn.Linear(D, D)
+
+        def forward(self, x):                              # (B, p, D)
+            trend, seasonal = _series_decomp(x, self.k)
+            h = self.enc(self.proj(seasonal))
+            return self.head(h[:, -1, :]) + self.trend_head(trend[:, -1, :])
+
+    class _FEDformerNet(nn.Module):
+        """FEDformer-lite: decomposition + a frequency-enhanced block — the seasonal
+        part is mixed by learnable complex weights on its lowest Fourier modes
+        (rFFT -> per-mode complex multiply -> iRFFT), then summed with the trend."""
+        def __init__(self, D, hidden, p):
+            super().__init__()
+            self.k = max(3, p // 4)
+            self.modes = max(1, min(p // 2, 6))
+            self.proj = nn.Linear(D, hidden)
+            self.wr = nn.Parameter(torch.randn(self.modes, hidden) * 0.05)
+            self.wi = nn.Parameter(torch.randn(self.modes, hidden) * 0.05)
+            self.head = nn.Linear(hidden, D)
+            self.trend_head = nn.Linear(D, D)
+
+        def forward(self, x):                              # (B, p, D)
+            trend, seasonal = _series_decomp(x, self.k)
+            h = torch.tanh(self.proj(seasonal))           # (B,p,H)
+            f = torch.fft.rfft(h, dim=1)                  # (B,F,H) complex
+            m = min(self.modes, f.shape[1])
+            w = torch.complex(self.wr[:m], self.wi[:m]).unsqueeze(0)
+            fout = torch.zeros_like(f)
+            fout[:, :m] = f[:, :m] * w
+            hf = torch.fft.irfft(fout, n=h.shape[1], dim=1)
+            return self.head(hf[:, -1, :]) + self.trend_head(trend[:, -1, :])
+
+    # ---------- more state-space ----------
+    class _S4Net(nn.Module):
+        """S4D-style diagonal COMPLEX state-space (LTI, non-selective) — distinct
+        from the selective Mamba-lite and the real-diagonal ssm_forecaster: a stable
+        complex pole per channel (decay + oscillation), HiPPO-inspired init."""
+        def __init__(self, D, hidden):
+            super().__init__()
+            self.enc = nn.Linear(D, hidden)
+            self.log_neg_re = nn.Parameter(torch.log(torch.linspace(0.1, 1.0, hidden)))
+            self.theta = nn.Parameter(torch.linspace(0.0, 3.0, hidden))
+            self.Bp = nn.Parameter(torch.ones(hidden) * 0.1)
+            self.Cr = nn.Parameter(torch.randn(hidden) * 0.1)
+            self.Ci = nn.Parameter(torch.randn(hidden) * 0.1)
+            self.head = nn.Linear(hidden, D)
+
+        def forward(self, x):                              # (B, p, D)
+            B, p, _ = x.shape
+            u = torch.tanh(self.enc(x))
+            mag = torch.exp(-torch.exp(self.log_neg_re))   # |pole| in (0,1) -> stable
+            cos, sin = torch.cos(self.theta) * mag, torch.sin(self.theta) * mag
+            hr = torch.zeros(B, u.shape[-1]); hi = torch.zeros(B, u.shape[-1])
+            for t in range(p):
+                inp = self.Bp * u[:, t]
+                hr, hi = cos * hr - sin * hi + inp, sin * hr + cos * hi
+            return self.head(self.Cr * hr - self.Ci * hi)  # Re(C x)
+
+    class _S5Net(nn.Module):
+        """S5-style: a single MIMO diagonal SSM (one shared state with full
+        input/output mixing) rather than S4's bank of independent SISO SSMs."""
+        def __init__(self, D, hidden):
+            super().__init__()
+            self.Bm = nn.Linear(D, hidden, bias=False)
+            self.log_dec = nn.Parameter(torch.log(torch.linspace(0.1, 0.9, hidden)))
+            self.Cm = nn.Linear(hidden, hidden)
+            self.head = nn.Linear(hidden, D)
+
+        def forward(self, x):                              # (B, p, D)
+            B, p, _ = x.shape
+            a = torch.exp(-torch.exp(self.log_dec))
+            h = torch.zeros(B, a.shape[0])
+            for t in range(p):
+                h = a * h + self.Bm(x[:, t])
+            return self.head(torch.tanh(self.Cm(h)))
+
+    class _FNONet(nn.Module):
+        """Fourier Neural Operator: lift -> a spectral conv (keep low modes, learnable
+        per-mode complex weights, iFFT) + a pointwise residual -> project. Learns the
+        forecasting map as an operator in frequency space."""
+        def __init__(self, D, hidden, p):
+            super().__init__()
+            self.modes = max(1, min(p // 2, 8))
+            self.lift = nn.Linear(D, hidden)
+            self.wr = nn.Parameter(torch.randn(self.modes, hidden) * 0.05)
+            self.wi = nn.Parameter(torch.randn(self.modes, hidden) * 0.05)
+            self.w = nn.Linear(hidden, hidden)
+            self.head = nn.Linear(hidden, D)
+
+        def forward(self, x):                              # (B, p, D)
+            h = self.lift(x)
+            f = torch.fft.rfft(h, dim=1)
+            m = min(self.modes, f.shape[1])
+            w = torch.complex(self.wr[:m], self.wi[:m]).unsqueeze(0)
+            fout = torch.zeros_like(f)
+            fout[:, :m] = f[:, :m] * w
+            spec = torch.fft.irfft(fout, n=h.shape[1], dim=1)
+            h2 = torch.relu(spec + self.w(h))
+            return self.head(h2[:, -1, :])
+
+    class _NeuralODENet(nn.Module):
+        """Latent Neural ODE: a GRU encodes the window to z0, then dz/dt = f(z) is
+        integrated by explicit fixed-step Euler (no torchdiffeq dep), decode -> next."""
+        def __init__(self, D, hidden):
+            super().__init__()
+            self.enc = nn.GRU(D, hidden, batch_first=True)
+            self.f = nn.Sequential(nn.Linear(hidden, hidden), nn.Tanh(), nn.Linear(hidden, hidden))
+            self.head = nn.Linear(hidden, D)
+            self.steps, self.dt = 4, 0.25
+
+        def forward(self, x):                              # (B, p, D)
+            _, h = self.enc(x)
+            z = h[-1]
+            for _ in range(self.steps):
+                z = z + self.dt * self.f(z)
+            return self.head(z)
+
+    class _PINNNet(nn.Module):
+        def __init__(self, D, hidden, p):
+            super().__init__()
+            self.net = nn.Sequential(nn.Linear(p * D, hidden), nn.Tanh(), nn.Linear(hidden, D))
+
+        def forward(self, x):                              # (B, p, D)
+            return self.net(x.reshape(x.shape[0], -1))
+
+    @register
+    class InformerForecastNode(_TorchForecaster):
+        """Informer (ProbSparse-attention) forecaster (Transformers family)."""
+        node_type = "informer_forecaster"
+
+        def _build(self, D, p):
+            return _InformerNet(D, self.hidden, p)
+
+    @register
+    class AutoformerForecastNode(_TorchForecaster):
+        """Autoformer (series-decomposition) forecaster (Transformers family)."""
+        node_type = "autoformer_forecaster"
+
+        def _build(self, D, p):
+            return _AutoformerNet(D, self.hidden, p)
+
+    @register
+    class FEDformerForecastNode(_TorchForecaster):
+        """FEDformer (frequency-enhanced decomposition) forecaster (Transformers)."""
+        node_type = "fedformer_forecaster"
+
+        def _build(self, D, p):
+            return _FEDformerNet(D, self.hidden, p)
+
+    @register
+    class S4ForecastNode(_TorchForecaster):
+        """S4 diagonal complex state-space forecaster (State-space family)."""
+        node_type = "s4_forecaster"
+
+        def _build(self, D, p):
+            return _S4Net(D, self.hidden)
+
+    @register
+    class S5ForecastNode(_TorchForecaster):
+        """S5 MIMO diagonal state-space forecaster (State-space family)."""
+        node_type = "s5_forecaster"
+
+        def _build(self, D, p):
+            return _S5Net(D, self.hidden)
+
+    @register
+    class FNOForecastNode(_TorchForecaster):
+        """Fourier Neural Operator forecaster (operator learning in frequency space)."""
+        node_type = "fno_forecaster"
+
+        def _build(self, D, p):
+            return _FNONet(D, self.hidden, p)
+
+    @register
+    class NeuralODEForecastNode(_TorchForecaster):
+        """Latent Neural-ODE forecaster (Euler-integrated continuous dynamics)."""
+        node_type = "neural_ode_forecaster"
+
+        def _build(self, D, p):
+            return _NeuralODENet(D, self.hidden)
+
+    @register
+    class PINNForecastNode(_TorchForecaster):
+        """Physics-Informed forecaster: MLP over the lag window + a finite-difference
+        curvature prior (penalize large 2nd differences) added to the data loss — a
+        generic 'smoothness physics' that regularizes the one-step prediction."""
+        node_type = "pinn_forecaster"
+
+        def __init__(self, phys: float = 0.1, **kw):
+            super().__init__(**kw)
+            self.phys = phys
+            self.params["phys"] = phys
+
+        def _build(self, D, p):
+            return _PINNNet(D, self.hidden, p)
+
+        def _extra_loss(self, pred, Xn, Yn):
+            last2, last1 = Xn[:, -2, :], Xn[:, -1, :]
+            return self.phys * ((pred - 2 * last1 + last2) ** 2).mean()
+
+    # ---------- Temporal-GNN (graph over a temporal + kNN adjacency) ----------
+    def _temporal_knn_adj(X, k=4):
+        from scipy.spatial.distance import cdist
+        T = X.shape[0]
+        d = cdist(X, X); np.fill_diagonal(d, np.inf)
+        k = min(k, T - 1)
+        idx = np.argsort(d, axis=1)[:, :k]
+        A = np.zeros((T, T), dtype=np.float32)
+        for i, nb in enumerate(idx):
+            A[i, nb] = 1.0
+        A = np.maximum(A, A.T)
+        for i in range(T - 1):                              # temporal chain edges
+            A[i, i + 1] = A[i + 1, i] = 1.0
+        A = A + np.eye(T, dtype=np.float32)
+        return A / A.sum(1, keepdims=True)
+
+    @register
+    class TemporalGNNDenoiseNode(_GraphDenoise):
+        """Temporal GNN denoiser: a graph conv over a graph that adds explicit
+        consecutive-time edges to the kNN-of-timesteps graph (so temporal locality
+        is a first-class relation, not just feature similarity)."""
+        node_type = "temporal_gnn_denoise"
+        _attention = False
+
+        def _transform(self, X: np.ndarray) -> np.ndarray:
+            return _graph_reconstruct(X, False, self.hidden, self.epochs,
+                                      adj_fn=_temporal_knn_adj)
+
+    # ---------- energy-based / associative-memory nets ----------
+    @register
+    class HopfieldDenoiseNode(Node):
+        """Modern Hopfield network (Ramsauer et al. 2020 — the 'attention IS Hopfield'
+        result) as an associative-memory denoiser: each (normalized) row is replaced
+        by a softmax(beta * X Xᵢᵀ)-weighted average of all stored rows, completing
+        each pattern toward the learned manifold. No training — pure retrieval."""
+        layer = "noise"
+        node_type = "hopfield_denoise"
+        is_transformer = True
+
+        def __init__(self, beta: float = 2.0, **kw):
+            super().__init__(beta=beta, **kw)
+            self.beta = beta
+
+        def _transform(self, X: np.ndarray) -> np.ndarray:
+            mu, sd = X.mean(0), X.std(0) + 1e-6
+            Xt = torch.tensor((X - mu) / sd, dtype=torch.float32)
+            attn = torch.softmax(self.beta * (Xt @ Xt.T), dim=1)
+            return (attn @ Xt).numpy() * sd + mu
+
+        def _predict(self, X: np.ndarray) -> Belief:
+            clean = self._transform(X)
+            resid = float(np.mean(np.abs(X - clean)))
+            denom = float(np.mean(np.abs(X))) + 1e-9
+            return Belief("denoised", {"series": clean[:, 0].tolist(), "residual": resid,
+                                       "model": "modern-hopfield"},
+                          float(max(0.0, 1.0 - resid / denom)), self.name)
+
+    @register
+    class RBMDenoiseNode(Node):
+        """Restricted Boltzmann Machine (Gaussian-Bernoulli) denoiser trained by
+        contrastive divergence (CD-1, manual updates); the one-Gibbs-step
+        reconstruction is the cleaned series — an energy-based generative denoiser."""
+        layer = "noise"
+        node_type = "rbm_denoise"
+        is_transformer = True
+
+        def __init__(self, hidden: int = 8, epochs: int = 120, **kw):
+            super().__init__(hidden=hidden, epochs=epochs, **kw)
+            self.hidden, self.epochs = hidden, epochs
+
+        def _transform(self, X: np.ndarray) -> np.ndarray:
+            _seed()
+            mu, sd = X.mean(0), X.std(0) + 1e-6
+            V = torch.tensor((X - mu) / sd, dtype=torch.float32)
+            D = V.shape[1]
+            W = torch.randn(D, self.hidden) * 0.1
+            hb, vb = torch.zeros(self.hidden), torch.zeros(D)
+            n, lr = V.shape[0], 0.05
+            for _ in range(self.epochs):
+                ph = torch.sigmoid(V @ W + hb)              # positive phase
+                h0 = (torch.rand_like(ph) < ph).float()
+                vn = h0 @ W.T + vb                          # gaussian visible reconstruction
+                phn = torch.sigmoid(vn @ W + hb)            # negative phase
+                W += lr * (V.T @ ph - vn.T @ phn) / n       # CD-1 updates
+                vb += lr * (V - vn).mean(0)
+                hb += lr * (ph - phn).mean(0)
+            ph = torch.sigmoid(V @ W + hb)
+            return (ph @ W.T + vb).numpy() * sd + mu
+
+        def _predict(self, X: np.ndarray) -> Belief:
+            clean = self._transform(X)
+            resid = float(np.mean(np.abs(X - clean)))
+            denom = float(np.mean(np.abs(X))) + 1e-9
+            return Belief("denoised", {"series": clean[:, 0].tolist(), "residual": resid,
+                                       "model": "gaussian-bernoulli-RBM"},
+                          float(max(0.0, 1.0 - resid / denom)), self.name)
+
+    # ---------- deep generative anomaly (operate on lag-windows) ----------
+    def _windows(x, p):
+        return np.stack([x[i:i + p] for i in range(len(x) - p)]) if len(x) > p + 2 else None
+
+    @register
+    class GANAnomalyNode(Node):
+        """GAN anomaly detector: a generator learns the distribution of lag-windows
+        while a discriminator learns to rate 'realness'; windows the trained
+        discriminator deems unlikely (low realness) are flagged anomalous."""
+        layer = "noise"
+        node_type = "gan_anomaly"
+
+        def __init__(self, lag: int = 6, hidden: int = 16, epochs: int = 80,
+                     quantile: float = 0.9, **kw):
+            super().__init__(lag=lag, hidden=hidden, epochs=epochs, quantile=quantile, **kw)
+            self.lag, self.hidden, self.epochs, self.quantile = lag, hidden, epochs, quantile
+
+        def _predict(self, X: np.ndarray) -> Belief:
+            _seed()
+            x = X[:, 0].astype(float)
+            p = max(2, min(self.lag, max(2, len(x) // 4)))
+            W = _windows(x, p)
+            if W is None or len(W) < 6:
+                return Belief("anomaly", {"n_anomalies": 0, "fraction": 0.0,
+                                          "scores": [], "flags": []}, 0.1, self.name)
+            mu, sd = W.mean(), W.std() + 1e-6
+            Wt = torch.tensor((W - mu) / sd, dtype=torch.float32)
+            G = nn.Sequential(nn.Linear(p, self.hidden), nn.ReLU(), nn.Linear(self.hidden, p))
+            Dn = nn.Sequential(nn.Linear(p, self.hidden), nn.ReLU(), nn.Linear(self.hidden, 1))
+            og = torch.optim.Adam(G.parameters(), lr=0.01)
+            od = torch.optim.Adam(Dn.parameters(), lr=0.01)
+            bce = nn.BCEWithLogitsLoss()
+            ones, zeros = torch.ones(Wt.shape[0], 1), torch.zeros(Wt.shape[0], 1)
+            for _ in range(self.epochs):
+                z = torch.randn(Wt.shape[0], p)
+                fake = G(z).detach()
+                od.zero_grad()
+                (bce(Dn(Wt), ones) + bce(Dn(fake), zeros)).backward()
+                od.step()
+                z = torch.randn(Wt.shape[0], p)
+                og.zero_grad()
+                bce(Dn(G(z)), ones).backward()
+                og.step()
+            with torch.no_grad():
+                real = torch.sigmoid(Dn(Wt)).numpy().ravel()
+            score = 1.0 - real
+            thr = float(np.quantile(score, self.quantile))
+            flags = (score > thr).astype(int)
+            return Belief("anomaly", {"n_anomalies": int(flags.sum()), "fraction": float(flags.mean()),
+                                      "scores": score.tolist(), "flags": flags.tolist(), "model": "GAN"},
+                          float(min(1.0, float(flags.mean()) * 3)), self.name)
+
+    class _CouplingLayer(nn.Module):
+        """RealNVP affine coupling: x1 unchanged; x2 -> x2*exp(s(x1)) + t(x1)."""
+        def __init__(self, dim, hidden):
+            super().__init__()
+            self.half = dim // 2
+            self.s = nn.Sequential(nn.Linear(self.half, hidden), nn.Tanh(),
+                                   nn.Linear(hidden, dim - self.half))
+            self.t = nn.Sequential(nn.Linear(self.half, hidden), nn.Tanh(),
+                                   nn.Linear(hidden, dim - self.half))
+
+        def forward(self, x):
+            x1, x2 = x[:, :self.half], x[:, self.half:]
+            s = torch.tanh(self.s(x1))
+            z2 = x2 * torch.exp(s) + self.t(x1)
+            return torch.cat([x1, z2], 1), s.sum(1)
+
+    @register
+    class NormalizingFlowAnomalyNode(Node):
+        """Normalizing-flow (RealNVP-lite) anomaly detector: two affine coupling
+        layers (with a dimension flip between) map lag-windows to a standard-normal
+        base; per-window negative log-likelihood is the anomaly score (low-density
+        windows = anomalies). Exact likelihood, no adversarial training."""
+        layer = "noise"
+        node_type = "normalizing_flow_anomaly"
+
+        def __init__(self, lag: int = 6, hidden: int = 16, epochs: int = 120,
+                     quantile: float = 0.9, **kw):
+            super().__init__(lag=lag, hidden=hidden, epochs=epochs, quantile=quantile, **kw)
+            self.lag, self.hidden, self.epochs, self.quantile = lag, hidden, epochs, quantile
+
+        def _nll(self, flows, Wt):
+            z, logdet = Wt, torch.zeros(Wt.shape[0])
+            for i, fl in enumerate(flows):
+                z, ld = fl(z)
+                logdet = logdet + ld
+                z = z.flip(1) if i < len(flows) - 1 else z      # permute dims between layers
+            return 0.5 * (z ** 2).sum(1) - logdet               # -log p(x), up to const
+
+        def _predict(self, X: np.ndarray) -> Belief:
+            _seed()
+            x = X[:, 0].astype(float)
+            p = max(2, min(self.lag, max(2, len(x) // 4)))
+            W = _windows(x, p)
+            if W is None or len(W) < 6 or p < 2:
+                return Belief("anomaly", {"n_anomalies": 0, "fraction": 0.0,
+                                          "scores": [], "flags": []}, 0.1, self.name)
+            mu, sd = W.mean(), W.std() + 1e-6
+            Wt = torch.tensor((W - mu) / sd, dtype=torch.float32)
+            flows = nn.ModuleList([_CouplingLayer(p, self.hidden) for _ in range(2)])
+            opt = torch.optim.Adam(flows.parameters(), lr=0.01)
+            for _ in range(self.epochs):
+                opt.zero_grad()
+                self._nll(flows, Wt).mean().backward()
+                opt.step()
+            with torch.no_grad():
+                score = self._nll(flows, Wt).numpy()
+            score = score - score.min()
+            thr = float(np.quantile(score, self.quantile))
+            flags = (score > thr).astype(int)
+            return Belief("anomaly", {"n_anomalies": int(flags.sum()), "fraction": float(flags.mean()),
+                                      "scores": score.tolist(), "flags": flags.tolist(),
+                                      "model": "RealNVP"},
+                          float(min(1.0, float(flags.mean()) * 3)), self.name)
+
+    # ---------- continuous-control-family deep-RL (discrete short/flat/long) ----------
+    def _rl_tensors(X, lag):
+        x = X[:, 0].astype(float)
+        p = max(2, min(lag, max(2, len(x) // 4)))
+        S, R = _rl_dataset(x, p)
+        return x, p, S, R
+
+    @register
+    class SACPolicyNode(Node):
+        """Soft Actor-Critic (discrete adaptation): an entropy-regularized stochastic
+        policy over short/flat/long, trained against a 1-step Q-critic with the SAC
+        maximum-entropy bonus (favors decisive-but-not-overconfident policies)."""
+        layer = "rl"
+        node_type = "sac_policy"
+
+        def __init__(self, lag: int = 6, hidden: int = 16, epochs: int = 60,
+                     alpha: float = 0.1, **kw):
+            super().__init__(lag=lag, hidden=hidden, epochs=epochs, alpha=alpha, **kw)
+            self.lag, self.hidden, self.epochs, self.alpha = lag, hidden, epochs, alpha
+
+        def _predict(self, X: np.ndarray) -> Belief:
+            _seed()
+            x, p, S, R = _rl_tensors(X, self.lag)
+            if len(S) < 4:
+                return Belief("action", {"action": 1, "policy": [0.33, 0.34, 0.33]}, 0.1, self.name)
+            mu, sd = S.mean(), S.std() + 1e-6
+            St = torch.tensor((S - mu) / sd, dtype=torch.float32)
+            Rt = torch.tensor(R, dtype=torch.float32)
+            actor = nn.Sequential(nn.Linear(p, self.hidden), nn.ReLU(), nn.Linear(self.hidden, 3))
+            critic = nn.Sequential(nn.Linear(p, self.hidden), nn.ReLU(), nn.Linear(self.hidden, 3))
+            opt = torch.optim.Adam(list(actor.parameters()) + list(critic.parameters()), lr=0.01)
+            for _ in range(self.epochs):
+                opt.zero_grad()
+                q = critic(St)
+                logp = torch.log_softmax(actor(St), dim=1)
+                probs = logp.exp()
+                critic_loss = ((q - Rt) ** 2).mean()
+                actor_loss = -(probs * (q.detach() - self.alpha * logp)).sum(1).mean()
+                (critic_loss + actor_loss).backward()
+                opt.step()
+            with torch.no_grad():
+                probs = torch.softmax(actor(torch.tensor((x[-p:] - mu) / sd, dtype=torch.float32)), 0).numpy()
+            a = int(np.argmax(probs))
+            return Belief("action", {"action": a - 1, "policy": [float(v) for v in probs],
+                                     "labels": ["short", "flat", "long"], "model": "SAC"},
+                          float(max(0.0, min(1.0, probs[a]))), self.name)
+
+    @register
+    class TD3PolicyNode(Node):
+        """TD3 (discrete adaptation): twin Q-networks; the action is greedy w.r.t. the
+        element-wise MINIMUM of the two critics (clipped double-Q — TD3's fix for the
+        overestimation bias that single-critic DQN suffers)."""
+        layer = "rl"
+        node_type = "td3_policy"
+
+        def __init__(self, lag: int = 6, hidden: int = 16, epochs: int = 60, **kw):
+            super().__init__(lag=lag, hidden=hidden, epochs=epochs, **kw)
+            self.lag, self.hidden, self.epochs = lag, hidden, epochs
+
+        def _predict(self, X: np.ndarray) -> Belief:
+            _seed()
+            x, p, S, R = _rl_tensors(X, self.lag)
+            if len(S) < 4:
+                return Belief("action", {"action": 1, "q_values": [0, 0, 0]}, 0.1, self.name)
+            mu, sd = S.mean(), S.std() + 1e-6
+            St = torch.tensor((S - mu) / sd, dtype=torch.float32)
+            Rt = torch.tensor(R, dtype=torch.float32)
+            q1 = nn.Sequential(nn.Linear(p, self.hidden), nn.ReLU(), nn.Linear(self.hidden, 3))
+            q2 = nn.Sequential(nn.Linear(p, self.hidden), nn.ReLU(), nn.Linear(self.hidden, 3))
+            opt = torch.optim.Adam(list(q1.parameters()) + list(q2.parameters()), lr=0.01)
+            for _ in range(self.epochs):
+                opt.zero_grad()
+                (((q1(St) - Rt) ** 2).mean() + ((q2(St) - Rt) ** 2).mean()).backward()
+                opt.step()
+            with torch.no_grad():
+                w = torch.tensor((x[-p:] - mu) / sd, dtype=torch.float32)
+                q = torch.minimum(q1(w), q2(w)).numpy()         # clipped double-Q
+            a = int(np.argmax(q))
+            return Belief("action", {"action": a - 1, "q_values": [float(v) for v in q],
+                                     "labels": ["short", "flat", "long"], "model": "TD3"},
+                          float(max(0.0, min(1.0, abs(q[a])))), self.name)
+
+    @register
+    class A3CPolicyNode(Node):
+        """A3C (synchronous single-worker): a shared trunk with a policy head and a
+        value head; advantage = reward - learned V baseline drives the policy
+        gradient (an actor-critic, vs PPO-lite's fixed mean baseline)."""
+        layer = "rl"
+        node_type = "a3c_policy"
+
+        def __init__(self, lag: int = 6, hidden: int = 16, epochs: int = 60, **kw):
+            super().__init__(lag=lag, hidden=hidden, epochs=epochs, **kw)
+            self.lag, self.hidden, self.epochs = lag, hidden, epochs
+
+        def _predict(self, X: np.ndarray) -> Belief:
+            _seed()
+            x, p, S, R = _rl_tensors(X, self.lag)
+            if len(S) < 4:
+                return Belief("action", {"action": 1, "policy": [0.33, 0.34, 0.33]}, 0.1, self.name)
+            mu, sd = S.mean(), S.std() + 1e-6
+            St = torch.tensor((S - mu) / sd, dtype=torch.float32)
+            Rt = torch.tensor(R, dtype=torch.float32)
+            trunk = nn.Sequential(nn.Linear(p, self.hidden), nn.ReLU())
+            pi = nn.Linear(self.hidden, 3)
+            vf = nn.Linear(self.hidden, 1)
+            opt = torch.optim.Adam(list(trunk.parameters()) + list(pi.parameters())
+                                   + list(vf.parameters()), lr=0.01)
+            for _ in range(self.epochs):
+                opt.zero_grad()
+                h = trunk(St)
+                v = vf(h)                                       # (N,1) baseline
+                adv = Rt - v                                    # advantage per action
+                logp = torch.log_softmax(pi(h), dim=1)
+                policy_loss = -(logp * adv.detach()).mean()
+                value_loss = (adv ** 2).mean()
+                (policy_loss + value_loss).backward()
+                opt.step()
+            with torch.no_grad():
+                probs = torch.softmax(pi(trunk(torch.tensor((x[-p:] - mu) / sd, dtype=torch.float32))), 0).numpy()
+            a = int(np.argmax(probs))
+            return Belief("action", {"action": a - 1, "policy": [float(v) for v in probs],
+                                     "labels": ["short", "flat", "long"], "model": "A3C"},
                           float(max(0.0, min(1.0, probs[a]))), self.name)

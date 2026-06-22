@@ -1285,3 +1285,30 @@ Owner: "read all files in the pattern brain and continue the plan implementation
 **Next in order (Rule 6 — one at a time):** Phase **7f batch 2** (torch — Informer/Autoformer/FEDformer, real Mamba/S4, temporal-GNN, SAC/TD3, GAN/normalizing-flows, Hopfield/Boltzmann energy nets, PINN/Neural-ODE/FNO, foundation TS) OR **7g** equation discovery (PySR/SINDy/AI-Feynman). 7f is the bigger coverage unlock (closes the Transformers/SSM/Graph/Deep-RL/Generative gaps).
 
 Rules applied: 1, 2, 4, 5, 7, 13, 14, 16, 18, 20, 21, 22, 23, 24, 25, 26.
+
+---
+
+## 2026-06-22 — Implementation: Phase 7f BATCH 2 built (deep-tier breadth fill)
+
+Owner: "Do 7f batch 2." Per Rule 22, this was the next open item after 7e batch 3. Built **16 pure-torch nodes** in `deep.py` (torch bank 178→**194**; light unchanged at 159 — all torch-guarded so the light bank is untouched).
+
+**Decision (Rule 16 — steelman + §0b):** the PLAN's 7f-batch-2 TODO listed some items needing heavy external deps (real Mamba via `mamba-ssm` CUDA kernel — no GPU here; Chronos/TimesFM foundation models — large downloads). Steelmanned pulling those in now: they'd fill 2-3 coverage slots but violate §0b ("add only proven-needed deps") and Rule 1 (huge in-folder downloads) for marginal benefit on a 12-vCPU/no-GPU box. Decision: build the entire **dependency-free** subset (still 16 nodes, fills 4 whole families) and defer the dep-bound ones with an honest note + label them as a future 7f batch 3.
+
+**Built (all behind the generic Node interface, all v0.1-conformant):**
+- Advanced Transformers: `informer_forecaster` (ProbSparse top-u attention), `autoformer_forecaster` (series decomposition), `fedformer_forecaster` (frequency-enhanced decomposition).
+- State-space: `s4_forecaster` (S4D complex-diagonal LTI — distinct from the selective Mamba-lite + real-diagonal `ssm`), `s5_forecaster` (MIMO diagonal).
+- Operator/continuous: `fno_forecaster` (Fourier Neural Operator), `neural_ode_forecaster` (Euler-integrated latent ODE, no torchdiffeq), `pinn_forecaster` (curvature physics prior).
+- Temporal-GNN: `temporal_gnn_denoise` (kNN + consecutive-time edges).
+- Energy nets: `hopfield_denoise` (modern Hopfield, training-free retrieval — "attention IS Hopfield"), `rbm_denoise` (Gaussian-Bernoulli RBM, CD-1).
+- Deep generative anomaly: `gan_anomaly` (discriminator realness over windows), `normalizing_flow_anomaly` (RealNVP-lite exact NLL).
+- Deep-RL (discrete short/flat/long): `sac_policy` (entropy-regularized AC), `td3_policy` (twin clipped double-Q), `a3c_policy` (advantage AC with learned value baseline).
+
+**Two behavior-preserving base-helper edits** (so the new nodes reuse tested machinery cleanly): an `_extra_loss` hook on `_TorchForecaster` (default 0.0; PINN overrides it) and an `adj_fn` param on `_graph_reconstruct` (default `_knn_adj`; Temporal-GNN passes a temporal adjacency).
+
+**Evidence:** `tests/test_deep7f2.py` (16 conformance + multi-feature D=3 + denoiser/anomaly/RL behavioral + an AR(1) tracking check) green; **all 23 suites green on BOTH interpreters** (light 159 / torch 194). Coverage **76.3%→87.3% (103/118)**: State-space, Graph, Reinforcement-learning, and Generative families are now **COMPLETE**; Transformers 5/7, Physics 13/14 (only Quantum/QAOA). Light bank verified unaffected (test_deep7f2 skips cleanly without torch). PLAN.md updated; committed + pushed (Rule 24).
+
+**Deferred honestly (§0b):** real Mamba/S4 CUDA kernels, foundation TS (Chronos/TimesFM/TimeGPT), self-supervised representation tier (SimCLR/BYOL/MAE) — future 7f batch 3.
+
+**Next in order (Rule 6):** **Phase 7g** — equation/symbolic discovery (PySR/SINDy/AI-Feynman/genetic programming), the last 7-series batch, which also feeds the AlgorithmEvolver (Feature 2). Symbolic-discovery is currently the lowest-coverage family (2/6).
+
+Rules applied: 1, 2, 4, 5, 7, 13, 16, 18, 20, 21, 22, 23, 24, 25, 26.
