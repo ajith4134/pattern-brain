@@ -28,7 +28,7 @@ STATUS: dict[str, str] = {
     # D1 statistical/econometric
     "arfima_forecast": "B", "vecm_pairs": "B", "johansen_coint": "N", "egarch_vol": "B",
     "sv_particle": "N", "markov_switching": "B", "kalman_state": "B", "copula_dependence": "N",
-    "evt_tail_risk": "N", "quantile_band": "B", "hawkes_intensity": "B", "hurst_dfa": "B",
+    "evt_tail_risk": "B", "quantile_band": "B", "hawkes_intensity": "B", "hurst_dfa": "B",
     "bocpd_break": "N", "har_rv": "N",
     # D2 probabilistic/Bayesian  (TIER-3 build 2026-06-23: bayes_update now ✅)
     "bayes_update": "B", "gp_forecast": "B", "hmm_regime": "B", "dp_mixture": "B",

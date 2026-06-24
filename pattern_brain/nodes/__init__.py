@@ -21,3 +21,4 @@ from . import tier3_probability  # noqa: F401  (TIER-3: Bayes update, MaxEnt, Ch
 from . import tier3_stochastic   # noqa: F401  (TIER-3: GBM/Bachelier, Langevin, Fokker-Planck)
 from . import tier3_control      # noqa: F401  (TIER-3: log-utility, Lagrange alloc, Bellman/HJB)
 from . import tier3_pricing      # noqa: F401  (TIER-3: Newton kinematics, Almgren exec, Black-Scholes)
+from . import tier1_classics     # noqa: F401  (TIER-1 directly-buildable classics, built one at a time)

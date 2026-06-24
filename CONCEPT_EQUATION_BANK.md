@@ -13,8 +13,9 @@ tool after adding nodes to refresh it.
 - **⬜ NOT built** — an open model candidate (this is the "what's left to implement" list).
 - **▫️ foundational** — an underpinning concept / metric, not meant to be its own node.
 
-**LIVE TALLY (193 concepts): 75 ✅ built-Node · 10 🔬 built-module · 75 ⬜ NOT built · 33 ▫️ foundational.**
-→ **85 of 160 buildable concepts are done (~53%); 75 remain to implement** (most are TIER-2 ⭐ frontier — gate hardest, Rule 30).
+**LIVE TALLY (193 concepts): 76 ✅ built-Node · 10 🔬 built-module · 74 ⬜ NOT built · 33 ▫️ foundational.**
+→ **86 of 160 buildable concepts are done (~54%); 74 remain to implement** (most are TIER-2 ⭐ frontier — gate hardest, Rule 30).
+→ **TIER-1 directly-buildable cluster: being built ONE AT A TIME** (2026-06-23). Done so far: `evt_tail_risk` (Extreme Value Theory — Hill+GPD tail index/VaR/ES; KEEP-as-utility, recovers the ~2.5 cubic-law fat-tail index on real crypto, separates heavy from thin tails).
 → **TIER-3 (timeless foundations) is ✅ COMPLETE — 26/26 built** (the 2026-06-23 multi-agent build added 12 nodes: bayes_update, maxent_dist, chebyshev_bound, gbm_baseline, langevin_sampler, fokker_planck, log_utility, lagrange_opt, hjb_control, momentum_kinematics, almgren_exec, bs_pricing — most verdict KEEP-as-utility; none beats persistence on point forecast, per the project lesson).
 
 > Axes A/B/C/E (paradigm/task/architecture/property) are HOW we wrap these; Axis D (below) is WHAT the model
@@ -31,7 +32,7 @@ tool after adding nodes to refresh it.
 - ✅ **Markov Regime-Switching (Hamilton)** — params switch by hidden regime. [D] regime → `markov_switching`
 - ✅ **State-space / Kalman / particle filters** — latent state + noisy obs; ⭐ differentiable Kalman exists. [D] → `kalman_state` (have)
 - ⬜ **Copulas (Gaussian, t, Clayton, Gumbel, vine)** — dependency structure separate from marginals; tail co-movement. [I] portfolio/risk → `copula_dependence`
-- ⬜ **Extreme Value Theory (GPD, GEV, Hill estimator)** — tail distribution, max drawdown, VaR/ES. [D] risk → `evt_tail_risk`
+- ✅ **Extreme Value Theory (GPD, GEV, Hill estimator)** — tail distribution, max drawdown, VaR/ES. [D] risk → `evt_tail_risk`
 - ✅ **Quantile regression / CAViaR** — predict conditional quantiles (not just mean); dynamic VaR. [D] → `quantile_band`
 - ✅ **Hawkes processes (self-exciting point process)** ⭐ — event intensity λ(t)=μ+Σα e^{-β(t-tᵢ)}; trade/order clustering. [D] microstructure → `hawkes_intensity`
 - ✅ **Long memory / Hurst (R/S, DFA)** — persistence vs mean-reversion. [I] regime → `hurst_dfa` (see D7)
