@@ -13,9 +13,9 @@ tool after adding nodes to refresh it.
 - **⬜ NOT built** — an open model candidate (this is the "what's left to implement" list).
 - **▫️ foundational** — an underpinning concept / metric, not meant to be its own node.
 
-**LIVE TALLY (193 concepts): 76 ✅ built-Node · 10 🔬 built-module · 74 ⬜ NOT built · 33 ▫️ foundational.**
-→ **86 of 160 buildable concepts are done (~54%); 74 remain to implement** (most are TIER-2 ⭐ frontier — gate hardest, Rule 30).
-→ **TIER-1 directly-buildable cluster: being built ONE AT A TIME** (2026-06-23). Done so far: `evt_tail_risk` (Extreme Value Theory — Hill+GPD tail index/VaR/ES; KEEP-as-utility, recovers the ~2.5 cubic-law fat-tail index on real crypto, separates heavy from thin tails).
+**LIVE TALLY (193 concepts): 80 ✅ built-Node · 10 🔬 built-module · 70 ⬜ NOT built · 33 ▫️ foundational.**
+→ **90 of 160 buildable concepts are done (~56%); 70 remain to implement** (most are TIER-2 ⭐ frontier — gate hardest, Rule 30).
+→ **TIER-1 directly-buildable cluster: being built in small batches** (2026-06-23/24). Done so far (5): `evt_tail_risk` (EVT Hill+GPD tail/VaR/ES — KEEP-utility) · **batch 2 (2026-06-24):** `johansen_coint` (Engle-Granger cointegration + own light-stack ADF — KEEP-utility; correct on oracle, honest real result: crypto large-caps are near-unit-root / weakly cointegrated in this corpus) · `har_rv` (Corsi HAR realized-vol forecaster — **KEEP, beats persistence on 10/10 panel symbols, +20–48% MSE; the first TIER-1 node that genuinely beats a baseline because it forecasts VOLATILITY, which is predictable, not returns**) · `copula_dependence` (Kendall-τ + Gaussian-copula ρ + empirical tail dependence — KEEP-utility; recovers τ≈0.70 / tail-dep≈0.72 on ETH/BTC vs ~0.06 independent control) · `bocpd_break` (Bayesian online change-point via run-length-posterior collapse — KEEP-utility; localizes a real spliced regime break to ±5 bars).
 → **TIER-3 (timeless foundations) is ✅ COMPLETE — 26/26 built** (the 2026-06-23 multi-agent build added 12 nodes: bayes_update, maxent_dist, chebyshev_bound, gbm_baseline, langevin_sampler, fokker_planck, log_utility, lagrange_opt, hjb_control, momentum_kinematics, almgren_exec, bs_pricing — most verdict KEEP-as-utility; none beats persistence on point forecast, per the project lesson).
 
 > Axes A/B/C/E (paradigm/task/architecture/property) are HOW we wrap these; Axis D (below) is WHAT the model
@@ -26,18 +26,18 @@ tool after adding nodes to refresh it.
 ## D1 — Statistical / Econometric
 - ✅ **ARIMA / SARIMA / ARFIMA** — autoregressive + (fractional) integration + MA; ARFIMA captures long memory. [D] → `arfima_forecast`
 - ✅ **VAR / VECM** — vector autoregression + error correction for cointegrated series. [D] cross-asset → `vecm_pairs`
-- ⬜ **Cointegration (Engle-Granger, Johansen)** — long-run equilibrium between non-stationary series. [D] pairs/stat-arb → `johansen_coint`
+- ✅ **Cointegration (Engle-Granger, Johansen)** — long-run equilibrium between non-stationary series. [D] pairs/stat-arb → `johansen_coint`
 - ✅ **GARCH family (GARCH, EGARCH, GJR, FIGARCH, GARCH-MIDAS)** — conditional variance; asymmetry/leverage; long-memory vol. [D] vol/risk → `egarch_vol` (have GARCH/EGARCH)
 - ⬜ **Stochastic Volatility (SV)** — latent vol process (vs GARCH's deterministic). [D] → `sv_particle`
 - ✅ **Markov Regime-Switching (Hamilton)** — params switch by hidden regime. [D] regime → `markov_switching`
 - ✅ **State-space / Kalman / particle filters** — latent state + noisy obs; ⭐ differentiable Kalman exists. [D] → `kalman_state` (have)
-- ⬜ **Copulas (Gaussian, t, Clayton, Gumbel, vine)** — dependency structure separate from marginals; tail co-movement. [I] portfolio/risk → `copula_dependence`
+- ✅ **Copulas (Gaussian, t, Clayton, Gumbel, vine)** — dependency structure separate from marginals; tail co-movement. [I] portfolio/risk → `copula_dependence`
 - ✅ **Extreme Value Theory (GPD, GEV, Hill estimator)** — tail distribution, max drawdown, VaR/ES. [D] risk → `evt_tail_risk`
 - ✅ **Quantile regression / CAViaR** — predict conditional quantiles (not just mean); dynamic VaR. [D] → `quantile_band`
 - ✅ **Hawkes processes (self-exciting point process)** ⭐ — event intensity λ(t)=μ+Σα e^{-β(t-tᵢ)}; trade/order clustering. [D] microstructure → `hawkes_intensity`
 - ✅ **Long memory / Hurst (R/S, DFA)** — persistence vs mean-reversion. [I] regime → `hurst_dfa` (see D7)
-- ⬜ **Change-point: CUSUM, Bayesian Online ChangePoint (BOCPD)** — structural breaks in real time. [D] regime → `bocpd_break`
-- ⬜ **Realized volatility / HAR-RV** — multi-scale realized-vol regression. [D] vol → `har_rv`
+- ✅ **Change-point: CUSUM, Bayesian Online ChangePoint (BOCPD)** — structural breaks in real time. [D] regime → `bocpd_break`
+- ✅ **Realized volatility / HAR-RV** — multi-scale realized-vol regression. [D] vol → `har_rv`
 
 ## D2 — Probabilistic / Bayesian
 - ✅ **Bayes' rule / Bayesian updating** — posterior ∝ likelihood × prior. [D] belief fusion → `bayes_update`

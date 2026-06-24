@@ -26,10 +26,10 @@ DOC = Path(__file__).resolve().parent.parent / "CONCEPT_EQUATION_BANK.md"
 # B = registered Node ; M = module/utility ; N = not built ; F = foundational/no-node
 STATUS: dict[str, str] = {
     # D1 statistical/econometric
-    "arfima_forecast": "B", "vecm_pairs": "B", "johansen_coint": "N", "egarch_vol": "B",
-    "sv_particle": "N", "markov_switching": "B", "kalman_state": "B", "copula_dependence": "N",
+    "arfima_forecast": "B", "vecm_pairs": "B", "johansen_coint": "B", "egarch_vol": "B",
+    "sv_particle": "N", "markov_switching": "B", "kalman_state": "B", "copula_dependence": "B",
     "evt_tail_risk": "B", "quantile_band": "B", "hawkes_intensity": "B", "hurst_dfa": "B",
-    "bocpd_break": "N", "har_rv": "N",
+    "bocpd_break": "B", "har_rv": "B",
     # D2 probabilistic/Bayesian  (TIER-3 build 2026-06-23: bayes_update now ✅)
     "bayes_update": "B", "gp_forecast": "B", "hmm_regime": "B", "dp_mixture": "B",
     "vae_latent": "B", "bsts_forecast": "N", "smc_state": "B",

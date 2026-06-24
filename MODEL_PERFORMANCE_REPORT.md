@@ -284,3 +284,15 @@ Built the 12 remaining TIER-3 ⬜ concepts as registered Nodes via 4 file-isolat
 | `bs_pricing` | signal | put-call parity 7e-15, Greek signs | KEEP-as-utility (pricing identity, not a predictor) |
 
 Net: 2 REJECT-as-forecaster + 1 SHADOW + 9 KEEP-as-utility — consistent with the standing truth (tools/features/control utilities earn their place; standalone point-prediction does not). TIER-3 (timeless foundations) now 26/26 in `CONCEPT_EQUATION_BANK.md`. Bank: 177 registered light nodes (+12).
+
+## 2026-06-24 — TIER-1 batch 2 (johansen_coint, har_rv, copula_dependence, bocpd_break)
+| node | type | oracle | real-data verdict |
+|---|---|---|---|
+| `har_rv` | forecast | beats persistence on GARCH-sim RV | **KEEP — beats persistence on 10/10 panel symbols, skill +0.20…+0.48 (median ≈+0.46); first TIER-1 node to beat a baseline (forecasts VOLATILITY, which is predictable, not returns)** |
+| `johansen_coint` | signal | ADF: RW non-stat / AR(.2) stat; EG recovers hedge 2.0, rejects indep walks | KEEP-as-utility — oracle-correct; honest real result = crypto large-caps near-unit-root / weakly cointegrated (1/5 spreads, 0/5 pairs clear the strict bar in this corpus); useful hedge-ratio/half-life/z-spread feature |
+| `copula_dependence` | signal | t-copula tail-dep > Gaussian-copula | KEEP-as-utility — ETH/BTC τ=0.71, tail-dep≈0.72 vs ~0.06 independent control; surfaces joint-crash risk a correlation misses |
+| `bocpd_break` | anomaly | mean shift localized ±8 | KEEP-as-utility — real spliced regime break t=300 detected at t=305 (±5); detector = run-length-posterior collapse (see IMP-002) |
+
+Net: **1 genuine forecaster KEEP (har_rv)** + 3 KEEP-as-utility (risk/regime/stat tools). The project
+truth holds and is sharpened: standalone *return* forecasters lose to persistence, but a *volatility*
+forecaster (HAR-RV) wins decisively — vol is the predictable target. Bank: 80 registered Node types.
