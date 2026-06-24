@@ -205,6 +205,21 @@ def test_coverage_endpoint():
           f"{len(d['families'])} families")
 
 
+def test_concept_bank_endpoint():
+    """Concept-equation-bank build status: built vs the open 'to implement' list."""
+    r = client.get("/api/concept_bank")
+    check(r.status_code == 200, f"/api/concept_bank status {r.status_code}")
+    d = r.json()
+    check(d["built_node"] + d["built_module"] == d["done"], "done must equal built Node+module")
+    check(d["done"] + d["not_built"] == d["buildable"], "done+not_built must equal buildable")
+    check(d["not_built"] == len(d["to_implement"]), "to_implement list must match not_built count")
+    check(len(d["tiers"]) == 3, "expected 3 tiers")
+    check(all("frontier" in x and "tier" in x for x in d["to_implement"]), "each todo needs tier+frontier")
+    check(0 <= d["done_pct"] <= 100, "done_pct out of range")
+    print(f"  GET /api/concept_bank -> {d['done']}/{d['buildable']} built ({d['done_pct']}%), "
+          f"{d['not_built']} to implement")
+
+
 def test_galton_endpoint():
     """The Galton board: bins, random counts, exact Binomial, and Normal overlay."""
     r = client.get("/api/galton?rows=10&balls=3000")

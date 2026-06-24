@@ -47,8 +47,52 @@ import pattern_brain as pb  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 INDEX = os.path.join(HERE, "index.html")
+DATA_DIR = os.path.join(os.path.dirname(HERE), "data")
 
 app = FastAPI(title="Pattern Brain — Living Graph (step 2 walking skeleton)")
+
+
+# --------------------------------------------- chat history persistence (ENG idea 2)
+# The browser-side transcript is ephemeral (lost on reload); persist every turn to
+# a tiny SQLite log keyed by session so past ML-Engineer conversations can be
+# reviewed/replayed. stdlib sqlite3, its own file — no coupling to the leaderboard.
+import sqlite3 as _sqlite3
+import time as _chat_time
+
+_CHAT_DB = os.path.join(DATA_DIR, "chat_history.sqlite")
+_CHAT_DB_LOCK = threading.Lock()
+
+
+def _chat_db() -> "_sqlite3.Connection":
+    os.makedirs(DATA_DIR, exist_ok=True)
+    conn = _sqlite3.connect(_CHAT_DB)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS chat_log ("
+        "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "  session TEXT NOT NULL,"
+        "  ts REAL NOT NULL,"
+        "  role TEXT NOT NULL,"
+        "  content TEXT NOT NULL,"
+        "  reasoning TEXT DEFAULT '',"
+        "  backend TEXT DEFAULT '')")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_chat_session ON chat_log(session, id)")
+    return conn
+
+
+def _chat_log(session: str, role: str, content: str,
+              reasoning: str = "", backend: str = "") -> None:
+    """Append one chat turn. Best-effort: a logging failure never breaks the chat."""
+    try:
+        with _CHAT_DB_LOCK:
+            conn = _chat_db()
+            conn.execute(
+                "INSERT INTO chat_log(session, ts, role, content, reasoning, backend) "
+                "VALUES (?,?,?,?,?,?)",
+                (session or "default", _chat_time.time(), role, content or "", reasoning or "", backend or ""))
+            conn.commit()
+            conn.close()
+    except Exception:
+        pass
 
 
 def synthetic_sequence(T: int = 240, D: int = 3, seed: int = 7) -> np.ndarray:
@@ -393,6 +437,64 @@ def overview() -> JSONResponse:
     return JSONResponse(_overview_payload())
 
 
+def _codegen_quality_payload() -> dict:
+    """Parse the code-skills benchmark history (code_skills_test/SCORECARD_HISTORY.md)
+    so the dashboard can show whether generated-code quality is holding/drifting as the
+    model bank grows. Each row: date, easy-panel EXCELLENT count, per-model verdicts,
+    and the three hard-regime contract A/B transitions (scaling/separability/drift)."""
+    path = os.path.join(ROOT, "code_skills_test", "SCORECARD_HISTORY.md")
+    cols = ["date", "easy_excellent", "per_model", "scaling", "separability",
+            "drift", "robust"]
+    rows = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line.startswith("|") or line.startswith("| date") \
+                        or set(line) <= set("|-: "):
+                    continue
+                cells = [c.strip() for c in line.strip("|").split("|")]
+                if len(cells) >= len(cols):
+                    rows.append(dict(zip(cols, cells[:len(cols)])))
+    except FileNotFoundError:
+        return {"available": False,
+                "note": "No benchmark history yet — run "
+                        "`python3 code_skills_test/run_benchmark.py`."}
+    return {"available": True, "n_runs": len(rows), "rows": rows,
+            "latest": rows[-1] if rows else None}
+
+
+@app.get("/api/codegen_quality")
+def codegen_quality() -> JSONResponse:
+    return JSONResponse(_codegen_quality_payload())
+
+
+def _verify_blocks_payload() -> dict:
+    """The ML Engineer Agent's cross-session Phase-4 'avoid-list': model families and
+    features that repeatedly failed the verification gate (agent_state/verify_blocks.json).
+    Makes the agent's learned memory human-inspectable."""
+    import json as _json
+    path = os.path.join(ROOT, "agent_state", "verify_blocks.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = _json.load(f)
+    except (FileNotFoundError, ValueError, OSError):
+        return {"available": False,
+                "note": "No Phase-4 blocks recorded yet — the agent hasn't had a "
+                        "model fail verification."}
+    by_family = sorted(d.get("by_family", {}).items(), key=lambda kv: -kv[1])
+    by_feature = sorted(d.get("by_feature", {}).items(), key=lambda kv: -kv[1])
+    return {"available": True,
+            "by_family": [{"family": k, "blocks": v} for k, v in by_family],
+            "by_feature": [{"feature": k, "blocks": v} for k, v in by_feature],
+            "total_blocks": sum(d.get("by_family", {}).values())}
+
+
+@app.get("/api/verify_blocks")
+def verify_blocks() -> JSONResponse:
+    return JSONResponse(_verify_blocks_payload())
+
+
 @app.get("/api/evaluator")
 def evaluator() -> JSONResponse:
     return JSONResponse(_evaluator_payload())
@@ -407,6 +509,28 @@ def evolution() -> JSONResponse:
 def coverage_endpoint() -> JSONResponse:
     """Catalog-vs-built coverage meter (PLAN §11): per-family ✅/🟡/❌ toward ~500."""
     return JSONResponse(pb.coverage())
+
+
+@lru_cache(maxsize=1)
+def _concept_bank_payload() -> dict:
+    """CONCEPT_EQUATION_BANK.md build status (the 'what's left to implement' menu).
+
+    Parses the committed status markers via tools/reconcile_concept_bank.py::summarize —
+    the doc is the single source of truth, this just surfaces it on the Coverage tab.
+    """
+    import sys
+    from pathlib import Path
+    root = str(Path(__file__).resolve().parent.parent)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from tools.reconcile_concept_bank import summarize
+    return summarize()
+
+
+@app.get("/api/concept_bank")
+def concept_bank_endpoint() -> JSONResponse:
+    """Concept-equation-bank build status: built vs the open 'to implement' list."""
+    return JSONResponse(_concept_bank_payload())
 
 
 @lru_cache(maxsize=1)
@@ -533,15 +657,23 @@ _AGENT_LOCK = threading.RLock()
 _RUN_LOCK = threading.Lock()         # serializes heavy agent runs (step/confirm) off the read path
 
 
+_AGENT_BACKEND = None        # name of the resolved chat backend (for telemetry/persistence)
+
+
 def _agent():
     """Lazy singleton agent shared across requests. Wired to a real LLM text
     backend if one is configured (cloud key or Ollama), else the offline templated
     chat — the same graceful degradation as everywhere else."""
-    global _AGENT
+    global _AGENT, _AGENT_BACKEND
     with _AGENT_LOCK:
         if _AGENT is None:
             from pattern_brain.agent import MLEngineerAgent
-            chat, _name = pb.auto_text_completer()
+            # reasoning model first (Cerebras gpt-oss-120b) so the chat/advisor
+            # deliberate instead of blurting — owner asked it to "think" (2026-06-23).
+            # resilient_* re-resolves per call, so a 429 on the reasoner falls through
+            # to the next free cloud instead of erroring the chat.
+            chat, _name = pb.resilient_text_completer(prefer=pb.CHAT_PREFER)
+            _AGENT_BACKEND = _name
             _AGENT = MLEngineerAgent(llm_chat=chat)
             _AGENT.ensure_books()      # self-populate the book vector DB in the background
         return _AGENT
@@ -645,17 +777,98 @@ async def agent_chat(request: Request) -> JSONResponse:
     body = await request.json()
     message = (body or {}).get("message", "")
     history = (body or {}).get("history", [])
+    session = (body or {}).get("session", "default") or "default"
+    effort = (body or {}).get("reasoning_effort")        # low|medium|high|None
     a = _agent()
+    _chat_log(session, "user", message)
     # chat() blocks on LLM HTTP calls (a bounded ReAct loop). Run it OFF the event
     # loop so one slow/hung backend can't freeze the whole dashboard, and cap the
     # total wait so the endpoint ALWAYS returns (the agent's own deadline is lower).
     try:
-        reply = await asyncio.wait_for(asyncio.to_thread(a.chat, message, history), timeout=70)
+        reply = await asyncio.wait_for(
+            asyncio.to_thread(lambda: a.chat(message, history, reasoning_effort=effort)),
+            timeout=70)
     except asyncio.TimeoutError:
         return JSONResponse({"reply": "⏳ The agent took too long to respond (a model backend may be "
                              "slow right now). Please try again — simpler questions answer fastest.",
-                             "pending": None})
-    return JSONResponse({"reply": reply, "pending": a.pending_action()})
+                             "reasoning": "", "pending": None})
+    reasoning = getattr(a, "last_reasoning", "") or ""
+    backend = getattr(a.llm_chat, "last_backend", None) or _AGENT_BACKEND or ""
+    _chat_log(session, "assistant", reply, reasoning=reasoning, backend=backend)
+    return JSONResponse({"reply": reply, "reasoning": reasoning, "backend": backend,
+                         "pending": a.pending_action()})
+
+
+@app.get("/api/agent/backends")
+def agent_backends() -> JSONResponse:
+    """Reasoner health for the chat header badge: which backend the chat prefers,
+    whether it's currently rate-limited (in cooldown), and the full fallback chain."""
+    cds = pb.provider_cooldowns()
+    reasoner = pb.CHAT_PREFER[0] if pb.CHAT_PREFER else None
+    return JSONResponse({
+        "reasoner": reasoner,
+        "reasoner_cooldown": cds.get(reasoner, 0.0),     # seconds remaining; 0 = live
+        "cooldowns": cds,
+        "chain": list(pb.CHAT_PREFER),
+        "available": [p["name"] for p in pb.available_cloud_providers()],
+    })
+
+
+@app.get("/api/agent/chat_sessions")
+def agent_chat_sessions() -> JSONResponse:
+    """List past chat sessions (id, auto-title, turn count, last-activity) for the
+    replay UI. The title is the session's first user message (idea: titles)."""
+    try:
+        with _CHAT_DB_LOCK:
+            conn = _chat_db()
+            rows = conn.execute(
+                "SELECT c.session, COUNT(*) n, MAX(c.ts) last, "
+                "  (SELECT content FROM chat_log w WHERE w.session=c.session AND w.role='user' "
+                "   ORDER BY w.id ASC LIMIT 1) title "
+                "FROM chat_log c GROUP BY c.session ORDER BY last DESC LIMIT 100").fetchall()
+            conn.close()
+        def _title(t):
+            t = (t or "").strip().replace("\n", " ")
+            return (t[:60] + "…") if len(t) > 60 else (t or "(empty)")
+        return JSONResponse({"sessions": [
+            {"session": r[0], "turns": r[1], "last": r[2], "title": _title(r[3])} for r in rows]})
+    except Exception as e:
+        return JSONResponse({"sessions": [], "error": str(e)})
+
+
+@app.post("/api/agent/chat_delete")
+async def agent_chat_delete(request: Request) -> JSONResponse:
+    """Delete one chat session's transcript (idea: delete). Keeps the replay list tidy."""
+    body = await request.json()
+    sid = (body or {}).get("session", "")
+    if not sid:
+        return JSONResponse({"ok": False, "error": "no session"}, status_code=400)
+    try:
+        with _CHAT_DB_LOCK:
+            conn = _chat_db()
+            n = conn.execute("DELETE FROM chat_log WHERE session=?", (sid,)).rowcount
+            conn.commit()
+            conn.close()
+        return JSONResponse({"ok": True, "deleted": n})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.get("/api/agent/chat_history")
+def agent_chat_history(session: str = "default", limit: int = 200) -> JSONResponse:
+    """Return the persisted transcript for one session (idea 2: review/replay)."""
+    try:
+        with _CHAT_DB_LOCK:
+            conn = _chat_db()
+            rows = conn.execute(
+                "SELECT ts, role, content, reasoning, backend FROM chat_log "
+                "WHERE session=? ORDER BY id ASC LIMIT ?",
+                (session or "default", max(1, min(int(limit), 1000)))).fetchall()
+            conn.close()
+        msgs = [{"ts": r[0], "role": r[1], "content": r[2], "reasoning": r[3], "backend": r[4]} for r in rows]
+        return JSONResponse({"session": session, "messages": msgs})
+    except Exception as e:
+        return JSONResponse({"session": session, "messages": [], "error": str(e)})
 
 
 # --------------------------------- async job registry (idea 1: non-blocking runs)
@@ -667,19 +880,25 @@ _JOBS_MAX = 50
 
 
 def _start_job(fn) -> str:
-    """Run a blocking ``fn`` in a daemon thread; track status/result by job id so
-    the UI can poll instead of waiting on one long request (idea 1)."""
+    """Run a blocking ``fn(report)`` in a daemon thread; track status/progress/result
+    by job id so the UI can poll instead of waiting on one long request (idea 1).
+    ``fn`` receives a ``report(progress_dict)`` callback for rung-level progress."""
     jid = _uuid.uuid4().hex[:12]
     with _JOBS_LOCK:
         if len(_JOBS) >= _JOBS_MAX:                       # drop oldest finished jobs
             for k in [k for k, v in sorted(_JOBS.items(), key=lambda kv: kv[1].get("started", 0))
                       if v.get("status") != "running"][:10]:
                 _JOBS.pop(k, None)
-        _JOBS[jid] = {"status": "running", "started": _time.time(), "result": None}
+        _JOBS[jid] = {"status": "running", "started": _time.time(), "result": None, "progress": None}
+
+    def report(p):
+        with _JOBS_LOCK:
+            if jid in _JOBS:
+                _JOBS[jid]["progress"] = p
 
     def _work():
         try:
-            res = fn()
+            res = fn(report)
             with _JOBS_LOCK:
                 _JOBS[jid].update(status="done", result=res, ended=_time.time())
         except Exception as e:                            # surface failures to the poller
@@ -697,7 +916,8 @@ def agent_job(jid: str) -> JSONResponse:
         if j is None:
             return JSONResponse({"status": "unknown"}, status_code=404)
         out = {"status": j["status"],
-               "elapsed": round((j.get("ended") or _time.time()) - j["started"], 1)}
+               "elapsed": round((j.get("ended") or _time.time()) - j["started"], 1),
+               "progress": j.get("progress")}
         if j["status"] == "done":
             out["result"] = j["result"]
         elif j["status"] == "error":
@@ -719,12 +939,22 @@ async def agent_confirm(request: Request) -> JSONResponse:
     if not approve or pa is None or pa.get("id") != aid:     # instant: no heavy compute
         return JSONResponse({**a.confirm_action(aid, approve=approve), "async": False})
 
-    def _run():
+    def _run(report):
         with _RUN_LOCK:                                      # serialize heavy runs; never block reads
-            return a.confirm_action(aid, approve=True)
+            return a.confirm_action(aid, approve=True, progress_cb=report)
     jid = _start_job(_run)
     return JSONResponse({"async": True, "job_id": jid, "status": "running",
                          "desc": pa.get("desc")})
+
+
+@app.get("/api/archive")
+def archive_endpoint() -> JSONResponse:
+    """W4 Quality-Diversity archive: the best pathway combo per niche
+    (symbol × timeframe × volatility-regime) — the owner's 'save all the top
+    network connection combinations'."""
+    from pattern_brain.archive import QDArchive
+    arch = QDArchive()
+    return JSONResponse({"entries": arch.all(), "stats": arch.stats()})
 
 
 @app.get("/api/compute")

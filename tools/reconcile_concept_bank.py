@@ -123,6 +123,51 @@ def process(text: str) -> tuple[str, dict[str, int]]:
     return "\n".join(out) + ("\n" if text.endswith("\n") else ""), tally
 
 
+def summarize() -> dict:
+    """Parse the already-marked doc into a dashboard payload (the doc is source of truth).
+
+    Returns per-tier tallies + the flat 'to_implement' list (the ⬜ entries). Safe to call
+    from the dashboard server; reads the committed markers, does not recompute or write.
+    """
+    text = DOC.read_text()
+    mark_to_code = {v: k for k, v in MARK.items()}
+    tiers = {"TIER-1": "TIER-1 — PhD / cutting-edge core",
+             "TIER-2": "TIER-2 — research frontier (⭐)",
+             "TIER-3": "TIER-3 — timeless foundations"}
+    per_tier: dict[str, dict] = {t: {"name": n, "B": 0, "M": 0, "N": 0, "F": 0} for t, n in tiers.items()}
+    tally = {k: 0 for k in MARK}
+    to_implement: list[dict] = []
+    tier, section = "TIER-1", ""
+    bullet_mark = re.compile(r"^\s*[-*] (✅|🔬|⬜|▫️) \*\*(.+?)\*\*")  # .+? so titles w/ '*' (Kelly f*) match
+    for line in text.splitlines():
+        if line.startswith("# ===== TIER-2"):
+            tier = "TIER-2"
+        elif line.startswith("# ===== TIER-3"):
+            tier = "TIER-3"
+        elif line.startswith("## ") and not line.startswith("## ⛔") and not line.startswith("## Sources"):
+            section = line[3:].strip()
+        m = bullet_mark.match(line)
+        if not m:
+            continue
+        code = mark_to_code[m.group(1)]
+        tally[code] += 1
+        per_tier[tier][code] += 1
+        if code == "N":
+            to_implement.append({"name": m.group(2).strip(), "tier": tier, "section": section,
+                                 "frontier": "⭐" in line})
+    buildable = tally["B"] + tally["M"] + tally["N"]
+    done = tally["B"] + tally["M"]
+    return {
+        "total": sum(tally.values()),
+        "built_node": tally["B"], "built_module": tally["M"],
+        "not_built": tally["N"], "foundational": tally["F"],
+        "buildable": buildable, "done": done,
+        "done_pct": round(100 * done / buildable) if buildable else 0,
+        "tiers": [dict(per_tier[t], buildable=per_tier[t]["B"] + per_tier[t]["M"] + per_tier[t]["N"]) for t in tiers],
+        "to_implement": to_implement,
+    }
+
+
 def main() -> None:
     text = DOC.read_text()
     new, tally = process(text)

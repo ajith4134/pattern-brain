@@ -745,7 +745,10 @@ function NetworkView() {
 // --- Coverage meter: catalog-vs-built per family (✅/🟡/❌) toward the ~500-node goal.
 function CoverageView() {
   const [d, setD] = useState(null);
+  const [cb, setCb] = useState(null);
+  const [showTodo, setShowTodo] = useState(false);
   useEffect(() => { fetch("/api/coverage").then(r => r.json()).then(setD); }, []);
+  useEffect(() => { fetch("/api/concept_bank").then(r => r.json()).then(setCb).catch(()=>{}); }, []);
   if (!d) return html`<div class="card"><div class="body"><span class="sub">loading coverage…</span></div></div>`;
   const icon = s => ({ complete: "✅", partial: "🟡", missing: "❌" }[s] || "·");
   const barColor = s => ({ complete: "#34d399", partial: "#f59e0b", missing: "#6b7280" }[s]);
@@ -780,6 +783,34 @@ function CoverageView() {
           </div>`)}
         </div>
       </div>
+      ${cb && html`<div class="card">
+        <h2>🧪 Concept-equation bank — what's built vs left to implement</h2>
+        <div class="tiles">
+          <div class="tile"><div class="big">${cb.done}/${cb.buildable}</div><div class="lbl">concepts built (${cb.done_pct}%)</div></div>
+          <div class="tile"><div class="big">${cb.built_node}</div><div class="lbl">✅ as Node</div></div>
+          <div class="tile"><div class="big">${cb.built_module}</div><div class="lbl">🔬 as module</div></div>
+          <div class="tile"><div class="big">${cb.not_built}</div><div class="lbl">⬜ to implement</div></div>
+        </div>
+        <div class="hint">From CONCEPT_EQUATION_BANK.md (source of truth; refresh via <code>tools/reconcile_concept_bank.py</code>).
+          ${cb.foundational} foundational concepts aren't counted (not meant to be nodes).</div>
+        <div class="body">
+          ${cb.tiers.map((t,i) => { const pct = t.buildable ? Math.round(100*(t.B+t.M)/t.buildable) : 0; return html`<div key=${i} style=${{ margin: "10px 0" }}>
+            <div style=${{ display: "flex", justifyContent: "space-between" }}>
+              <span><b>${t.name}</b></span><span class="sub">${t.B+t.M}/${t.buildable} built · ${t.N} left</span>
+            </div>
+            <div style=${{ background: "var(--panel2)", borderRadius: "5px", height: "8px", margin: "4px 0", overflow: "hidden" }}>
+              <div style=${{ width: pct + "%", height: "100%", background: pct>66?"#34d399":pct>33?"#f59e0b":"#6b7280" }}></div>
+            </div>
+          </div>`; })}
+        </div>
+        <div class="body">
+          <button onClick=${() => setShowTodo(!showTodo)}>${showTodo ? "▾ hide" : "▸ show"} the ${cb.not_built} concepts left to implement</button>
+          ${showTodo && html`<div style=${{ display: "flex", flexWrap: "wrap", gap: "3px", marginTop: "8px" }}>
+            ${cb.to_implement.map((x,j) => html`<span key=${j} class="kindtag" style=${{ opacity: x.frontier?1:.7, borderColor: x.frontier?"#a78bfa":undefined }}
+              title=${x.tier + " · " + x.section}>${x.frontier?"⭐ ":"○ "}${x.name}</span>`)}
+          </div>`}
+        </div>
+      </div>`}
     </div>`;
 }
 
@@ -852,12 +883,26 @@ function EngineerView({ color }) {
   const [actBusy, setActBusy] = useState(false);
   const [ideas, setIdeas] = useState([]);
   const [genBusy, setGenBusy] = useState(false);
+  // chat reasoning controls + persistence (ENG ideas 1/2/3)
+  const [effort, setEffort] = useState(() => localStorage.getItem("pb_chat_effort") || "medium");
+  const [sessionId] = useState(() => {
+    let s = localStorage.getItem("pb_chat_session");
+    if (!s) { s = "s-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
+              localStorage.setItem("pb_chat_session", s); }
+    return s;
+  });
+  const [sessions, setSessions] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [health, setHealth] = useState(null);   // reasoner backend health (cooldown badge)
   const [compute, setCompute] = useState(null);
+  const [archive, setArchive] = useState(null);
   const refresh = useCallback(() => {
     fetch("/api/knowledge").then(r => r.json()).then(setKn);
     fetch("/api/agent/status").then(r => r.json()).then(setStatus);
     fetch("/api/advisor/ideas").then(r => r.json()).then(d => setIdeas(d.ideas || []));
     fetch("/api/compute").then(r => r.json()).then(setCompute).catch(() => {});
+    fetch("/api/archive").then(r => r.json()).then(setArchive).catch(() => {});
+    fetch("/api/agent/backends").then(r => r.json()).then(setHealth).catch(() => {});
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
   const genIdeas = async () => {
@@ -866,9 +911,15 @@ function EngineerView({ color }) {
           setIdeas(d.ideas || []); } finally { setGenBusy(false); }
   };
   const setIdeaStatus = async (id, status) => {
-    const d = await fetch("/api/advisor/status", {method:"POST",
-      headers:{"Content-Type":"application/json"}, body:JSON.stringify({id, status})}).then(x=>x.json());
-    setIdeas(d.ideas || []);
+    // optimistic update so the click feels instant even on a slow/just-restarted server
+    setIdeas(cur => cur.map(it => it.id === id ? { ...it, status } : it));
+    try {
+      const d = await fetch("/api/advisor/status", {method:"POST",
+        headers:{"Content-Type":"application/json"}, body:JSON.stringify({id, status})}).then(x=>x.json());
+      if (d && d.ideas) setIdeas(d.ideas);
+    } catch (e) {
+      setIdeas(cur => cur.map(it => it.id === id ? { ...it, status: "⚠ failed — retry" } : it));
+    }
   };
 
   const runStep = async () => {
@@ -882,17 +933,46 @@ function EngineerView({ color }) {
   const [chatBusy, setChatBusy] = useState(false);
   const send = async () => {
     const m = msg.trim(); if (!m || chatBusy) return;
+    // history the backend can use as context (role/content only — drop reasoning)
+    const hist = chat.map(c => ({ role: c.role, content: c.content }));
     setChat(c => [...c, { role: "user", content: m }]); setMsg("");
     setChatBusy(true);
     try {
       const r = await fetch("/api/agent/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: m }) }).then(x => x.json());
-      setChat(c => [...c, { role: "assistant", content: r.reply }]);
+        body: JSON.stringify({ message: m, history: hist, session: sessionId,
+                               reasoning_effort: effort }) }).then(x => x.json());
+      setChat(c => [...c, { role: "assistant", content: r.reply, reasoning: r.reasoning || "", backend: r.backend || "" }]);
       setPending(r.pending || null);
+      fetch("/api/agent/backends").then(x => x.json()).then(setHealth).catch(() => {});
     } catch (e) {
       setChat(c => [...c, { role: "assistant", content: "⚠ request failed: " + e }]);
     } finally { setChatBusy(false); }
+  };
+  const changeEffort = (v) => { setEffort(v); localStorage.setItem("pb_chat_effort", v); };
+  const loadSessions = async () => {
+    setShowHistory(h => !h);
+    if (!showHistory) {
+      try { const d = await fetch("/api/agent/chat_sessions").then(x => x.json());
+            setSessions(d.sessions || []); } catch (e) { setSessions([]); }
+    }
+  };
+  const replaySession = async (sid) => {
+    try {
+      const d = await fetch("/api/agent/chat_history?session=" + encodeURIComponent(sid) + "&limit=500")
+                  .then(x => x.json());
+      setChat((d.messages || []).map(m => ({ role: m.role, content: m.content,
+               reasoning: m.reasoning || "", backend: m.backend || "" })));
+      setShowHistory(false);
+    } catch (e) { /* leave current chat intact on failure */ }
+  };
+  const deleteSession = async (sid) => {
+    try {
+      await fetch("/api/agent/chat_delete", { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session: sid }) });
+      setSessions(cur => cur.filter(s => s.session !== sid));
+      if (sid === sessionId) setChat([]);   // cleared the active session → empty the view
+    } catch (e) { /* ignore */ }
   };
   const [runStatus, setRunStatus] = useState("");
   const confirmAct = async (approve) => {
@@ -907,7 +987,11 @@ function EngineerView({ color }) {
         while (true) {
           await new Promise(s => setTimeout(s, 1500));
           const j = await fetch("/api/agent/job/" + r.job_id).then(x => x.json());
-          if (j.status === "running") { setRunStatus(`⚙ running… ${j.elapsed||0}s (${r.desc||"run"})`); continue; }
+          if (j.status === "running") {
+            const p = j.progress;
+            const phase = p ? `${p.phase} — rung ${p.rung}/${p.of}${p.candidates!=null?` (${p.candidates} candidates)`:""}` : "starting…";
+            setRunStatus(`⚙ ${phase} · ${j.elapsed||0}s`); continue;
+          }
           res = j.status === "done" ? j.result : { reply: "⚠ run failed: " + (j.error || j.status) };
           break;
         }
@@ -961,6 +1045,24 @@ function EngineerView({ color }) {
       </div>
 
       <div class="card">
+        <h2>🏆 Top Combos — Quality-Diversity archive (W4)</h2>
+        <div class="hint">The best network combo found per niche (symbol × timeframe × volatility-regime) — "save all the top connection combinations". Populated each time you run a DAG search.</div>
+        <div class="body">
+          ${archive && archive.entries && archive.entries.length ? html`
+            <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+              <tr style=${{ textAlign: "left", color: "#9fb3d1" }}>
+                <th>symbol</th><th>tf</th><th>regime</th><th>combiner</th><th>nodes</th><th>CRPS-skill</th></tr>
+              ${archive.entries.slice(0, 12).map((e, i) => html`<tr key=${i} style=${{ borderTop: "1px solid var(--line)" }}>
+                <td>${e.symbol}</td><td>${e.timeframe}</td><td>${e.regime}</td>
+                <td>${(e.spec||{}).combiner ?? "—"}</td><td>${(e.spec||{}).n_nodes ?? "—"}</td>
+                <td style=${{ color: "#5eead4" }}>${e.skill==null?"—":(+e.skill).toFixed(4)}</td></tr>`)}
+            </table>
+            <div class="sub" style=${{ marginTop: "6px" }}>${archive.stats.n_niches} niche(s) across ${(archive.stats.symbols||[]).join(", ")||"—"}</div>
+          ` : html`<span class="sub">No combos saved yet — run a DAG search (e.g. "run dag search on btc") to populate the archive.</span>`}
+        </div>
+      </div>
+
+      <div class="card">
         <h2>🧠 LLM Engine (the agent's brain) — Block 56 sweep</h2>
         <div class="body">
           ${llm ? html`
@@ -997,12 +1099,27 @@ function EngineerView({ color }) {
       </div>
 
       <div class="card">
-        <h2>💬 Talk to the ML Engineer</h2>
+        <h2>💬 Talk to the ML Engineer
+          ${health && health.reasoner ? html`<span style=${{ marginLeft: "8px", fontSize: "12px", fontWeight: "normal" }}>
+            <span style=${{ display: "inline-block", width: "8px", height: "8px", borderRadius: "50%",
+              background: health.reasoner_cooldown > 0 ? "#f59e0b" : "#34d399", marginRight: "4px" }}></span>
+            <span class="sub">${health.reasoner}${health.reasoner_cooldown > 0
+              ? ` cooling down ${Math.ceil(health.reasoner_cooldown)}s — using fallback`
+              : " live"}</span></span>` : null}
+        </h2>
         <div class="body">
           <div style=${{ maxHeight: "260px", overflow: "auto", marginBottom: "8px" }}>
             ${chat.length === 0 ? html`<span class="sub">Ask it anything — e.g. "what's the state of the bank?" or "what should we try next?"</span>` : null}
             ${chat.map((m,i) => html`<div key=${i} style=${{ margin: "6px 0" }}>
               <b style=${{ color: m.role === "user" ? "#7dd3fc" : "#5eead4" }}>${m.role === "user" ? "you" : "ML Engineer"}:</b>
+              ${m.role === "assistant" && m.backend ? html`<span class="kindtag" style=${{ marginLeft: "6px",
+                fontSize: "11px" }}>via ${m.backend}</span>` : null}
+              ${m.reasoning ? html`<details style=${{ margin: "2px 0 4px" }}>
+                <summary style=${{ cursor: "pointer", color: "#a78bfa", fontSize: "12px" }}>💭 thinking…</summary>
+                <div style=${{ whiteSpace: "pre-wrap", fontSize: "12px", color: "#9fb3d1",
+                               borderLeft: "2px solid #6d28d9", padding: "4px 8px", margin: "4px 0",
+                               background: "var(--panel2)", borderRadius: "4px" }}>${m.reasoning}</div>
+              </details>` : null}
               <div style=${{ whiteSpace: "pre-wrap" }}>${m.content}</div></div>`)}
           </div>
           ${pending ? html`<div style=${{ border: "1px solid #f59e0b", background: "var(--panel2)",
@@ -1014,15 +1131,38 @@ function EngineerView({ color }) {
           </div>` : null}
           ${chatBusy ? html`<div class="sub" style=${{ margin: "4px 0", color: "#5eead4" }}>🤔 thinking… (reading state / calling the model)</div>` : null}
           ${runStatus ? html`<div class="sub" style=${{ margin: "4px 0", color: "#fcd34d" }}>${runStatus}</div>` : null}
-          <div style=${{ display: "flex", gap: "8px" }}>
+          <div style=${{ display: "flex", gap: "8px", alignItems: "center" }}>
             <input style=${{ ...inp, opacity: chatBusy ? 0.6 : 1 }} disabled=${chatBusy}
                    placeholder=${'message the agent… (try "run a DAG search on BTC/USD")'} value=${msg}
                    onInput=${e => setMsg(e.target.value)}
                    onChange=${e => setMsg(e.target.value)}
                    onKeyDown=${e => { if (e.key === "Enter") send(); }} />
+            <select title="reasoning depth (Cerebras gpt-oss)" value=${effort}
+                    onChange=${e => changeEffort(e.target.value)}
+                    style=${{ ...inp, width: "auto" }}>
+              <option value="low">🧠 low</option>
+              <option value="medium">🧠 medium</option>
+              <option value="high">🧠 high</option>
+            </select>
             <button onClick=${send} disabled=${chatBusy}>${chatBusy ? "…" : "send"}</button>
+            <button onClick=${loadSessions} title="review past conversations">🕘</button>
           </div>
-          <div class="hint" style=${{ marginTop: "6px" }}>Read-only by default; "run …" requests are gated — they execute only after you Confirm.</div>
+          ${showHistory ? html`<div style=${{ border: "1px solid var(--line)", borderRadius: "6px",
+              padding: "8px 10px", margin: "6px 0", background: "var(--panel2)" }}>
+            <div class="sub" style=${{ marginBottom: "4px" }}>Past sessions — click to replay (read-only):</div>
+            ${sessions.length === 0 ? html`<span class="sub">none yet</span>` : null}
+            ${sessions.map((s,i) => html`<div key=${i} style=${{ padding: "3px 0", display: "flex",
+                alignItems: "center", gap: "6px" }}>
+              <a href="#" onClick=${e => { e.preventDefault(); replaySession(s.session); }}
+                 style=${{ color: "#7dd3fc", flex: "1", overflow: "hidden", textOverflow: "ellipsis",
+                           whiteSpace: "nowrap" }}
+                 title=${s.session}>${s.session === sessionId ? "★ " : ""}${s.title}</a>
+              <span class="sub" style=${{ whiteSpace: "nowrap" }}>${s.turns} turns</span>
+              <button onClick=${() => deleteSession(s.session)} title="delete this conversation"
+                      style=${{ padding: "1px 6px", fontSize: "12px" }}>🗑</button></div>`)}
+          </div>` : null}
+          <div class="hint" style=${{ marginTop: "6px" }}>Read-only by default; "run …" requests are gated — they execute only after you Confirm.
+            Reasoning depth applies to the Cerebras gpt-oss model; expand 💭 thinking to see its chain-of-thought.</div>
         </div>
       </div>
 
@@ -1068,6 +1208,88 @@ function EngineerView({ color }) {
         </div>
       </div>
     </div>`;
+}
+
+// --- Researcher avoid-list — Phase-4 verification blocks (cross-session memory).
+function AvoidListCard() {
+  const [d, setD] = useState(null);
+  useEffect(() => {
+    fetch("/api/verify_blocks").then(r => r.json()).then(setD).catch(() => {});
+  }, []);
+  if (!d) return html`<div class="card"><div class="body"><span class="sub">loading avoid-list…</span></div></div>`;
+  return html`
+    <div class="card">
+      <h2>🚫 Phase-4 Avoid-List — what the agent learned to distrust</h2>
+      <div class="body">
+        ${!d.available ? html`<span class="sub">${d.note}</span>` : html`
+          <span class="sub">${d.total_blocks} verification block(s) remembered across sessions. Repeated blocks down-weight a family in the Researcher's next pick.</span>
+          <div style=${{ display: "flex", gap: "24px", flexWrap: "wrap", marginTop: "10px" }}>
+            <div>
+              <div class="sub" style=${{ marginBottom: "4px" }}>by model family</div>
+              ${d.by_family.length === 0 ? html`<span class="sub">none</span>`
+                : d.by_family.map((r,i) => html`<div class="kv" key=${i}>
+                    <span class="pill" style=${{ color: "#f87171" }}>${r.family}</span>
+                    <span>${r.blocks}</span></div>`)}
+            </div>
+            <div>
+              <div class="sub" style=${{ marginBottom: "4px" }}>by feature</div>
+              ${d.by_feature.map((r,i) => html`<div class="kv" key=${i}>
+                  <span>${r.feature}</span><span>${r.blocks}</span></div>`)}
+            </div>
+          </div>`}
+      </div>
+    </div>`;
+}
+
+// --- Codegen Quality View — the blind-write -> oracle-diff benchmark trend.
+function CodegenView() {
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    fetch("/api/codegen_quality").then(r => r.json()).then(setD).catch(e => setErr(String(e)));
+  }, []);
+  if (err) return html`<div class="card"><div class="body"><span class="sub">codegen error: ${err}</span></div></div>`;
+  if (!d) return html`<div class="card"><div class="body"><span class="sub">loading codegen quality…</span></div></div>`;
+  if (!d.available) return html`<div class="card"><div class="body"><span class="sub">${d.note}</span></div></div>`;
+  const tag = (s) => {
+    const col = s && s.includes("→E") && !s.includes("R→") ? "#34d399"
+              : s === "True" ? "#34d399" : s && s.includes("R") ? "#fbbf24" : "#8aa0c8";
+    return html`<span style=${{ color: col, fontWeight: 600 }}>${s}</span>`;
+  };
+  const L = d.latest;
+  return html`
+    <div class="wrap"><div class="col">
+      <div class="card">
+        <h2>📈 Codegen Quality — does following the contract keep my code at library quality?</h2>
+        <div class="body">
+          <span class="sub">Blind-write → oracle-diff benchmark over ${d.n_runs} run(s). Easy panel = 5 classic models vs scikit-learn; hard panel = contract OFF→ON A/B on 3 hostile regimes (E=excellent, G=good, R=review).</span>
+          ${L ? html`<div style=${{ display: "flex", gap: "18px", flexWrap: "wrap", marginTop: "10px" }}>
+            <div class="tile"><b>${L.easy_excellent}</b><div class="sub">easy EXCELLENT</div></div>
+            <div class="tile"><b>${tag(L.scaling)}</b><div class="sub">scaling OFF→ON</div></div>
+            <div class="tile"><b>${tag(L.separability)}</b><div class="sub">separability OFF→ON</div></div>
+            <div class="tile"><b>${tag(L.drift)}</b><div class="sub">drift OFF→ON</div></div>
+            <div class="tile"><b>${tag(L.robust)}</b><div class="sub">robust (all 3)</div></div>
+          </div>` : null}
+        </div>
+      </div>
+      <div class="card">
+        <h2>Run history (newest last)</h2>
+        <div class="body" style=${{ overflowX: "auto" }}>
+          <table><thead><tr>
+            <th>date</th><th>easy</th><th>per-model</th><th>scaling</th>
+            <th>separab.</th><th>drift</th><th>robust</th>
+          </tr></thead><tbody>
+            ${d.rows.map((r,i) => html`<tr key=${i}>
+              <td style=${{ color: "#8aa0c8" }}>${r.date}</td><td>${r.easy_excellent}</td>
+              <td><span class="sub">${r.per_model}</span></td>
+              <td>${tag(r.scaling)}</td><td>${tag(r.separability)}</td>
+              <td>${tag(r.drift)}</td><td>${tag(r.robust)}</td>
+            </tr>`)}
+          </tbody></table>
+        </div>
+      </div>
+      <${AvoidListCard} />
+    </div></div>`;
 }
 
 function App() {
@@ -1149,7 +1371,7 @@ function App() {
         <div class="tabs">
           ${[["overview","Overview"],["engineer","🤖 ML Engineer"],["network","🏆 Network"],["capstone","🎯 Capstone"],["coverage","📊 Coverage"],["galton","🎲 Galton"],["bank","Model Bank"],["evaluator","Evaluator"],
              ["evolution","Evolution"],["pathways","Pathways"],["living","Living Graph"],
-             ["adapter","Adapter"],["files","Files"]].map(([k,label]) => html`
+             ["codegen","📈 Codegen Quality"],["adapter","Adapter"],["files","Files"]].map(([k,label]) => html`
             <button key=${k} class=${"tab" + (view===k ? " active" : "")}
                     onClick=${() => setView(k)}>${label}</button>`)}
         </div>
@@ -1171,6 +1393,7 @@ function App() {
         : view === "evaluator" ? html`<${EvaluatorView} />`
         : view === "evolution" ? html`<${EvolutionView} color=${color} />`
         : view === "pathways" ? html`<${PathwaysView} />`
+        : view === "codegen" ? html`<${CodegenView} />`
         : view === "adapter" ? html`<${AdapterView} />`
         : view === "bank" ? html`<${BankView} color=${color} />` : html`
       <div class="wrap">
