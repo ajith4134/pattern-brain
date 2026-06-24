@@ -13,8 +13,9 @@ tool after adding nodes to refresh it.
 - **⬜ NOT built** — an open model candidate (this is the "what's left to implement" list).
 - **▫️ foundational** — an underpinning concept / metric, not meant to be its own node.
 
-**LIVE TALLY (193 concepts): 55 ✅ built-Node · 10 🔬 built-module · 94 ⬜ NOT built · 34 ▫️ foundational.**
-→ **65 of 159 buildable concepts are done (~41%); 94 remain to implement** (most are TIER-2 ⭐ frontier — gate hardest, Rule 30).
+**LIVE TALLY (193 concepts): 75 ✅ built-Node · 10 🔬 built-module · 75 ⬜ NOT built · 33 ▫️ foundational.**
+→ **85 of 160 buildable concepts are done (~53%); 75 remain to implement** (most are TIER-2 ⭐ frontier — gate hardest, Rule 30).
+→ **TIER-3 (timeless foundations) is ✅ COMPLETE — 26/26 built** (the 2026-06-23 multi-agent build added 12 nodes: bayes_update, maxent_dist, chebyshev_bound, gbm_baseline, langevin_sampler, fokker_planck, log_utility, lagrange_opt, hjb_control, momentum_kinematics, almgren_exec, bs_pricing — most verdict KEEP-as-utility; none beats persistence on point forecast, per the project lesson).
 
 > Axes A/B/C/E (paradigm/task/architecture/property) are HOW we wrap these; Axis D (below) is WHAT the model
 > knows. See ML_MODEL_TAXONOMY.md. Each concept becomes a `Node` (see ML_ENGINEERING_PRACTICES.md).
@@ -38,7 +39,7 @@ tool after adding nodes to refresh it.
 - ⬜ **Realized volatility / HAR-RV** — multi-scale realized-vol regression. [D] vol → `har_rv`
 
 ## D2 — Probabilistic / Bayesian
-- ⬜ **Bayes' rule / Bayesian updating** — posterior ∝ likelihood × prior. [D] belief fusion → `bayes_update`
+- ✅ **Bayes' rule / Bayesian updating** — posterior ∝ likelihood × prior. [D] belief fusion → `bayes_update`
 - ✅ **Gaussian Processes (GP)** — nonparametric distribution over functions + uncertainty. [D] forecast w/ error bars → `gp_forecast`
 - ✅ **Hidden Markov / Hidden Semi-Markov (HMM/HSMM)** ⭐ differentiable HMM exists — latent discrete regimes. [D] regime → `hmm_regime` (have)
 - ✅ **Dirichlet Process / Bayesian nonparametrics** — infinite mixtures, auto-cluster count. [I] regime discovery → `dp_mixture`
@@ -56,13 +57,13 @@ tool after adding nodes to refresh it.
 - ▫️ **Fisher information / Jeffreys** — sensitivity/identifiability; bridges to info geometry (D6). [I]
 
 ## D4 — Physics-based / Stochastic Processes (the "physics models")
-- ⬜ **Geometric Brownian Motion dS=μS dt+σS dW** — baseline price SDE. [D] sim/baseline → `gbm_baseline`
+- ✅ **Geometric Brownian Motion dS=μS dt+σS dW** — baseline price SDE. [D] sim/baseline → `gbm_baseline`
 - ✅ **Ornstein-Uhlenbeck dX=θ(μ−X)dt+σdW** — mean reversion (pairs, vol). [D] mean-revert → `ou_meanrevert`
 - ⬜ **Jump-diffusion (Merton), Kou** — Brownian + Poisson jumps; fat tails/gaps. [D] → `jump_diffusion`
 - ⬜ **Heston stochastic-vol model** — vol is its own mean-reverting SDE. [D] vol surface → `heston_vol`
 - ✅ **Rough volatility (rough Bergomi, fractional)** ⭐ — vol driven by fractional BM, H<0.5; matches data. [D] → `rough_vol`
-- ⬜ **Fokker-Planck / Kolmogorov forward** — evolution of the probability density of an SDE. [I] distribution forecast → `fokker_planck`
-- ⬜ **Langevin dynamics** — force + noise; sampling & dynamics. [I] → `langevin_sampler`
+- ✅ **Fokker-Planck / Kolmogorov forward** — evolution of the probability density of an SDE. [I] distribution forecast → `fokker_planck`
+- ✅ **Langevin dynamics** — force + noise; sampling & dynamics. [I] → `langevin_sampler`
 - ⬜ **Ising / mean-field / spin-glass** ⭐ econophysics — trader herding → magnetization; bubbles/crashes. [I] sentiment/herding → `ising_herding`
 - ✅ **Self-Organized Criticality / power laws / avalanches** — heavy-tailed crash sizes. [I] tail/crash → `soc_avalanche`
 - ⬜ **Percolation / network contagion** — connectivity phase transition; systemic risk. [I] → `percolation_risk`
@@ -70,7 +71,7 @@ tool after adding nodes to refresh it.
 - ▫️ **Fluctuation-Dissipation / response functions** — how markets respond to shocks. [I]
 
 ## D5 — Thermodynamic / Energy-based
-- ⬜ **Maximum Entropy (MaxEnt) p∝exp(−Σλᵢfᵢ)** — least-biased distribution given constraints. [D] distribution est → `maxent_dist`
+- ✅ **Maximum Entropy (MaxEnt) p∝exp(−Σλᵢfᵢ)** — least-biased distribution given constraints. [D] distribution est → `maxent_dist`
 - ✅ **Boltzmann / Restricted Boltzmann Machines** — energy-based generative; learn joint structure. [I] embedding → `rbm_energy`
 - ⬜ **Free-Energy Principle / Active Inference** ⭐ — minimize surprise/prediction error. [I] meta-control → `active_inference`
 - ▫️ **Partition function / free energy** — normalizer; phase behavior of the market "ensemble." [I]
@@ -106,9 +107,9 @@ tool after adding nodes to refresh it.
 - ⬜ **Mean-field games** ⭐ — equilibrium among many small agents. [I] crowding → `mfg_crowding`
 
 ## D10 — Control-Theoretic
-- ⬜ **Stochastic optimal control / HJB** — optimal action under dynamics+noise. [D] sizing/exit → `hjb_control`
+- ✅ **Stochastic optimal control / HJB** — optimal action under dynamics+noise. [D] sizing/exit → `hjb_control`
 - ⬜ **Merton portfolio problem** — optimal consumption/allocation. [D] sizing → `merton_alloc`
-- ⬜ **Almgren-Chriss optimal execution** — minimize impact+risk of liquidation. [D] execution → `almgren_exec`
+- ✅ **Almgren-Chriss optimal execution** — minimize impact+risk of liquidation. [D] execution → `almgren_exec`
 - ⬜ **Model Predictive Control (MPC) / LQG** — rolling optimization under a model. [D] position control → `mpc_position`
 - ✅ **RL for execution/sizing (PPO, SAC, DQN)** — learned policy from reward. [D] → `rl_policy` (have rl.py)
 
@@ -257,49 +258,49 @@ than the frontier and several already underpin the bank. Organized by era/origin
 
 ## E1 — Probability & calculus foundations (1650–1800)
 - ▫️ **Pascal/Fermat (1654) — expected value** — the EV of a trade. [D] → core sizing logic
-- ⬜ **D. Bernoulli (1738) — expected utility / log utility** — risk-averse sizing; ancestor of Kelly. [D] → `log_utility`
-- ⬜ **Bayes (1763) — posterior ∝ likelihood × prior** — belief updating. [D] → `bayes_update`
-- ⬜ **Newton/Leibniz — calculus; rate-of-change & inertia** — momentum & its derivatives (velocity/acceleration of price). [D] → `momentum_kinematics`
+- ✅ **D. Bernoulli (1738) — expected utility / log utility** — risk-averse sizing; ancestor of Kelly. [D] → `log_utility`
+- ✅ **Bayes (1763) — posterior ∝ likelihood × prior** — belief updating. [D] → `bayes_update`
+- ✅ **Newton/Leibniz — calculus; rate-of-change & inertia** — momentum & its derivatives (velocity/acceleration of price). [D] → `momentum_kinematics`
 - ▫️ **Euler-Lagrange / calculus of variations** — optimize a functional → optimal paths/controls. [I] → control nodes
-- ⬜ **Lagrange multipliers / Hamiltonian mechanics** — constrained optimization (the math under Markowitz); Hamiltonian dynamics → Hamiltonian NNs. [D] allocation → `lagrange_opt`
+- ✅ **Lagrange multipliers / Hamiltonian mechanics** — constrained optimization (the math under Markowitz); Hamiltonian dynamics → Hamiltonian NNs. [D] allocation → `lagrange_opt`
 - ▫️ **Laplace — transform, de Moivre-Laplace CLT, Bayesian inference** — why aggregates go Gaussian (and when they don't). [I]
 - ▫️ **Gauss/Legendre — normal distribution, least squares, Gauss-Markov** — the workhorse estimator. [D] → regression nodes
 
 ## E2 — Fields, heat, waves, early stats (1800–1870)
 - ✅ **Fourier (1807) — Fourier series/transform, heat equation** — hidden cycles; the same diffusion PDE Bachelier later used for options. [D] → `fft_cycles` (have)
 - ✅ **Hooke's law / damped harmonic oscillator** — restoring force = mean reversion; **Ornstein-Uhlenbeck is a noisy damped oscillator**. [D] → `ou_meanrevert` (IDEA-025)
-- ⬜ **Chebyshev inequality** — distribution-free tail bounds (works without Gaussian assumption). [D] risk → `chebyshev_bound`
+- ✅ **Chebyshev inequality** — distribution-free tail bounds (works without Gaussian assumption). [D] risk → `chebyshev_bound`
 - ▫️ **Cauchy distribution** — heavy tails with no finite mean/variance (a caution + a model for extremes). [I]
 - ▫️ **Clausius/Carnot — entropy & thermodynamics** — irreversibility, disorder. [I] (→ MaxEnt, D5)
 - ▫️ **Riemann — Riemannian geometry** — curved spaces → information geometry (D6). [I]
 
 ## E3 — Statistical mechanics, dynamics, electricity (1870–1910)  ["Boltzmann/Poincaré/Tesla/Bachelier"]
-- ⬜ **Boltzmann/Gibbs — S=k·lnW, Boltzmann distribution, ensembles, partition function** — the physics of many interacting agents → MaxEnt, Ising markets. [I] → `ising_herding`, `maxent_dist`
-- ▫️ **Tesla / harmonic resonance & AC oscillation** — resonance and harmonics. HONEST: the *science* (resonance, harmonic/spectral analysis) is real and lives in Fourier/Hilbert nodes; "Tesla 3-6-9" market mysticism is NOT proven → SCREENED OUT below. [I] cycle → (use `fft_cycles`/`hilbert_phase`)
+- ✅ **Boltzmann/Gibbs — S=k·lnW, Boltzmann distribution, ensembles, partition function** — the physics of many interacting agents → MaxEnt, Ising markets. [I] → `ising_herding`, `maxent_dist`
+- ✅ **Tesla / harmonic resonance & AC oscillation** — resonance and harmonics. HONEST: the *science* (resonance, harmonic/spectral analysis) is real and lives in Fourier/Hilbert nodes; "Tesla 3-6-9" market mysticism is NOT proven → SCREENED OUT below. [I] cycle → (use `fft_cycles`/`hilbert_phase`)
 - ✅ **Poincaré (1890s) — dynamical systems, recurrence theorem, Poincaré maps, sensitive dependence** — origin of chaos theory (and Bachelier's advisor). [I] → `takens_embed`, `rqa_determinism`
 - ✅ **Lyapunov (1892) — stability theory & Lyapunov exponents** — chaos vs noise. [I] → `lyapunov_chaos` (IDEA-001/005)
-- ⬜ **Bachelier (1900) — random walk / Brownian model of prices + diffusion PDE for options** — THE origin of quant finance. [D] baseline → `gbm_baseline`
+- ✅ **Bachelier (1900) — random walk / Brownian model of prices + diffusion PDE for options** — THE origin of quant finance. [D] baseline → `gbm_baseline`
 - ▫️ **Einstein (1905) / Smoluchowski — Brownian motion physics, diffusion equation, Einstein relation** — diffusion of price. [D] → `diffusion` (D4)
 - ✅ **Markov (1906) — Markov chains** — memoryless state transitions → HMM/regime. [D] → `markov_switching`, `hmm_regime`
-- ⬜ **Langevin (1908) — dX = −γX dt + noise** — stochastic dynamics; OU/mean-reversion engine. [D] → `langevin_sampler`
+- ✅ **Langevin (1908) — dX = −γX dt + noise** — stochastic dynamics; OU/mean-reversion engine. [D] → `langevin_sampler`
 - ▫️ **Pearson (1901) — correlation & PCA** — linear dependence & factor extraction. [D] → factor/embedding nodes
 
 ## E4 — Modern probability, stochastic calculus, control, information (1910–1985)
-- ⬜ **Fokker-Planck (1914) — evolution of the probability density** — full distribution forecast. [I] → `fokker_planck`
+- ✅ **Fokker-Planck (1914) — evolution of the probability density** — full distribution forecast. [I] → `fokker_planck`
 - ✅ **Wiener (1923/40s) — Wiener process; Wiener filter; Wiener-Khinchin (autocorr↔spectrum); cybernetics** — rigorous BM + optimal filtering. [D] → `wiener_filter`, `fft_cycles`
 - ✅ **Yule/Slutsky (1927) — autoregression (Yule-Walker); random shocks make cycles** — AR(p) foundation. [D] → `ar_forecast`
 - ▫️ **Wold (1938) — decomposition: stationary = deterministic + MA(∞)** — the theorem ARMA rests on. [D] → ARMA nodes
 - ✅ **Kolmogorov (1933) — probability axioms; forward/backward eqs; turbulence scaling (1941); complexity (1965)** — the rigorous base + the turbulence→multifractal-markets link. [D] → `multifractal`, `mdl_compress`
 - ▫️ **Itô (1944) — Itô calculus / Itô's lemma** — the engine of every SDE/option model. [D] → underpins all D4 SDE nodes
 - ▫️ **von Neumann-Morgenstern (1944) — game theory + expected-utility theorem** — rational decision under risk. [D] → decision layer
-- ⬜ **Bellman (1953) — dynamic programming / Bellman equation / principle of optimality** — the root of RL & HJB. [D] sizing/exit → `hjb_control`, `rl_policy`
-- ⬜ **Pontryagin (1956) — maximum principle** — optimal control of trajectories. [D] execution → `almgren_exec`
+- ✅ **Bellman (1953) — dynamic programming / Bellman equation / principle of optimality** — the root of RL & HJB. [D] sizing/exit → `hjb_control`, `rl_policy`
+- ✅ **Pontryagin (1956) — maximum principle** — optimal control of trajectories. [D] execution → `almgren_exec`
 - 🔬 **Markowitz (1952) — mean-variance portfolio** — risk-return optimization. [D] → `markowitz`
 - 🔬 **Kelly (1956) — growth-optimal bet sizing f*=μ/σ²** — the proven sizing law. [D] → `kelly_size`
 - ✅ **Kalman (1960) — recursive optimal linear filter** — latent state from noisy obs. [D] → `kalman_state` (have)
 - ▫️ **Sharpe (1964) — CAPM & Sharpe ratio** — risk-adjusted performance. [D] → evaluation metric
 - ✅ **Mandelbrot (1963→) — fat tails, stable laws, fractals, Hurst long-memory, multifractal markets** — markets are wilder than Gaussian (PROVEN stylized facts: heavy tails, vol clustering, long memory). [D] risk/regime → `multifractal`, `hurst_dfa`
-- ⬜ **Black-Scholes-Merton (1973) — option pricing PDE** — the diffusion PDE applied to derivatives. [D] → `bs_pricing`
+- ✅ **Black-Scholes-Merton (1973) — option pricing PDE** — the diffusion PDE applied to derivatives. [D] → `bs_pricing`
 - ✅ **Engle (1982) ARCH / Bollerslev (1986) GARCH** — volatility clustering. [D] → `egarch_vol` (have)
 
 ## ⛔ SCREENED OUT — popular but NOT statistically proven (senior-engineer guard, Rule 30)

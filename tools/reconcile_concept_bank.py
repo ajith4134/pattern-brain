@@ -30,18 +30,18 @@ STATUS: dict[str, str] = {
     "sv_particle": "N", "markov_switching": "B", "kalman_state": "B", "copula_dependence": "N",
     "evt_tail_risk": "N", "quantile_band": "B", "hawkes_intensity": "B", "hurst_dfa": "B",
     "bocpd_break": "N", "har_rv": "N",
-    # D2 probabilistic/Bayesian
-    "bayes_update": "N", "gp_forecast": "B", "hmm_regime": "B", "dp_mixture": "B",
+    # D2 probabilistic/Bayesian  (TIER-3 build 2026-06-23: bayes_update now ✅)
+    "bayes_update": "B", "gp_forecast": "B", "hmm_regime": "B", "dp_mixture": "B",
     "vae_latent": "B", "bsts_forecast": "N", "smc_state": "B",
     # D3 information-theoretic
     "entropy_regime": "B", "mi_screen": "B", "transfer_entropy": "B", "mdl_compress": "B",
     "perm_entropy": "B",
-    # D4 physics/SDE
-    "gbm_baseline": "N", "ou_meanrevert": "B", "jump_diffusion": "N", "heston_vol": "N",
-    "rough_vol": "B", "fokker_planck": "N", "langevin_sampler": "N", "ising_herding": "N",
+    # D4 physics/SDE  (TIER-3 build: gbm_baseline, langevin_sampler, fokker_planck now ✅)
+    "gbm_baseline": "B", "ou_meanrevert": "B", "jump_diffusion": "N", "heston_vol": "N",
+    "rough_vol": "B", "fokker_planck": "B", "langevin_sampler": "B", "ising_herding": "N",
     "soc_avalanche": "B", "percolation_risk": "N", "superstat_vol": "N",
-    # D5 energy-based
-    "maxent_dist": "N", "rbm_energy": "B", "active_inference": "N",
+    # D5 energy-based  (TIER-3 build: maxent_dist now ✅)
+    "maxent_dist": "B", "rbm_energy": "B", "active_inference": "N",
     # D6 geometric/topological
     "tda_persistence": "B", "infogeom_distance": "N", "wasserstein_shift": "N",
     "diffusion_map": "N", "path_signature": "M", "tensor_network": "N",
@@ -52,8 +52,8 @@ STATUS: dict[str, str] = {
     "granger_cause": "M", "ccm_cause": "N", "scm_intervene": "N", "pcmci_graph": "N",
     # D9 game-theoretic
     "kyle_impact": "N", "adversarial_robust": "N", "mfg_crowding": "N",
-    # D10 control
-    "hjb_control": "N", "merton_alloc": "N", "almgren_exec": "N", "mpc_position": "N",
+    # D10 control  (TIER-3 build: hjb_control [Bellman/HJB], almgren_exec now ✅)
+    "hjb_control": "B", "merton_alloc": "N", "almgren_exec": "B", "mpc_position": "N",
     "rl_policy": "B",
     # D11 optimization/OR
     "markowitz": "M", "kelly_size": "M", "hrp_alloc": "N", "cvar_opt": "N", "bayes_opt": "M",
@@ -82,9 +82,9 @@ STATUS: dict[str, str] = {
     "hyperbolic_embed": "N", "nonlinear_filter": "N", "meanfield_control": "N", "hjb_isaacs": "N",
     "q_amplitude_est": "N", "q_reservoir": "N", "universal_portfolio": "N",
     "online_no_regret": "M", "bandit_alloc": "B", "pcmci_plus": "N", "irm_invariant": "N",
-    # ---- TIER-3 timeless foundations ----
-    "log_utility": "N", "momentum_kinematics": "N", "lagrange_opt": "N", "chebyshev_bound": "N",
-    "diffusion": "F", "wiener_filter": "B", "ar_forecast": "B", "bs_pricing": "N",
+    # ---- TIER-3 timeless foundations  (TIER-3 build 2026-06-23: 5 below now ✅) ----
+    "log_utility": "B", "momentum_kinematics": "B", "lagrange_opt": "B", "chebyshev_bound": "B",
+    "diffusion": "F", "wiener_filter": "B", "ar_forecast": "B", "bs_pricing": "B",
 }
 MARK = {"B": "✅", "M": "🔬", "N": "⬜", "F": "▫️"}
 LABEL = {"B": "built (Node)", "M": "built (module)", "N": "NOT built", "F": "foundational"}
@@ -95,12 +95,20 @@ EXISTING_MARK_RE = re.compile(r"^(\s*[-*] )(✅|🔬|⬜|▫️) ")
 
 
 def classify(line: str) -> str | None:
-    """Return a status code for a concept bullet, or None if not a concept bullet."""
+    """Return a status code for a concept bullet, or None if not a concept bullet.
+
+    A line may list several candidate nodes (e.g. `ising_herding`, `maxent_dist`); it counts
+    as built if ANY of them exists. Priority best→worst: B > M > N > F.
+    """
     if not BULLET_RE.match(line):
         return None
-    m = NODE_RE.search(line)
-    if m and m.group(1) in STATUS:
-        return STATUS[m.group(1)]
+    tail = line.split("→", 1)[1] if "→" in line else ""   # all `node` names listed after the arrow
+    names = re.findall(r"`([a-z0-9_]+)`", tail)
+    codes = [STATUS[n] for n in names if n in STATUS]
+    if codes:
+        for best in ("B", "M", "N", "F"):
+            if best in codes:
+                return best
     if "(have" in line:           # author already marked it built
         return "B"
     return "F"                     # a concept with no node candidate → foundational/no-own-node
@@ -108,14 +116,16 @@ def classify(line: str) -> str | None:
 
 def process(text: str) -> tuple[str, dict[str, int]]:
     out, tally = [], {k: 0 for k in MARK}
-    in_screened = False
+    in_screened, started = False, False
     for line in text.splitlines():
+        if line.startswith("## ") and not line.startswith("## ⛔") and not line.startswith("## Sources"):
+            started = True                          # first real concept section reached (skip the legend)
         if line.startswith("## ⛔") or line.startswith("## Sources"):
             in_screened = True
         elif line.startswith("#") and not line.startswith("## ⛔"):
             in_screened = line.startswith("## Sources")
         line = EXISTING_MARK_RE.sub(r"\1", line)   # strip a prior run's marker (idempotent)
-        code = None if in_screened else classify(line)
+        code = None if (in_screened or not started) else classify(line)
         if code:
             tally[code] += 1
             line = BULLET_RE.sub(rf"\g<1>{MARK[code]} \g<2>", line, count=1)
