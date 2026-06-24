@@ -3,7 +3,7 @@ _Append-only log of every 💡 Ideas block Claude generates (owner rule 29, 2026
 _Newest at the bottom, dated. Each idea is a PROPOSAL — nothing here is implemented until the owner says "implement"._
 
 **Status legend:** `proposed` (default, awaiting decision) · `approved` (greenlit, not yet built) · `implemented` (built + verified) · `dismissed` (declined). Update an idea's status in place when it changes.
-**IDs:** every idea has a stable `IDEA-NNN` id (never reused, even if dismissed) so it can be referenced directly ("approve IDEA-003"). **next id: IDEA-089**
+**IDs:** every idea has a stable `IDEA-NNN` id (never reused, even if dismissed) so it can be referenced directly ("approve IDEA-003"). **next id: IDEA-090**
 
 ---
 
@@ -237,3 +237,7 @@ _These 💡 blocks were generated across the code-skills/contract/OU work and sh
 ### 2026-06-24 — VISION P1 build result + 💡 follow-up
 - **IDEA-084 · Universal Self-Supervised Embedding** — BUILT + oracle-tested (`pattern_brain/embedding.py`, node `universal_embedding`, `tests/test_embedding.py` 4/4). **Verdict: SHADOW/REJECT as designed** — code-correct (recovers true latent factors, recon R²=0.68) but on the volatility target it scores OOS R²=+0.02 vs PCA +0.69 vs raw +0.82 (0/10 symbols beat PCA). Pure-reconstruction pretext destroys predictive signal. Registered, not promoted. **Status:** implemented (shadow)
 - **IDEA-088 · Forecasting-aligned SSL objective (the P1 KEEP path)** — replace masked-reconstruction with **Contrastive Predictive Coding / next-latent prediction** (TS2Vec/CPC family): train the encoder so the latent PREDICTS the near-future representation, not just reconstructs the past. This aligns the latent with what's predictable (the reason TS2Vec/PatchTST win downstream). Optionally chain a Stage-4 semi-supervised fine-tune on the vol target. Re-test vs PCA/raw OOS before any KEEP. **Status:** proposed
+
+### 2026-06-24 — IDEA-088 result (P1 KEEP) + 💡 next
+- ✅ **IDEA-088 · Forecasting-aligned SSL objective** — IMPLEMENTED. Swapped P1's pretext to next-observation prediction (CPC family); `objective="forecast"` default. **Verdict: KEEP** — OOS vol R² +0.75 (6d) beats PCA +0.69 on 7/10 symbols (the reconstruction objective scored +0.02, lost 0/10). Same code, different pretext. P1 now genuinely earns its place as a learned nonlinear compressor. `pattern_brain/embedding.py` + node `universal_embedding`. **Status:** implemented
+- **IDEA-089 · Permutation-significance + InfoNCE upgrade for the embedding** — two hardening steps before P2 leans on it: (a) permutation-null test the emb>PCA edge (Rule 30 — is the 7/10 real or luck?); (b) add the full InfoNCE contrastive term (true Contrastive Predictive Coding: positive = real future, negatives = sampled others) on top of the regression forecast, which typically sharpens CPC representations further. **Status:** proposed

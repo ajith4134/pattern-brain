@@ -55,9 +55,20 @@ def test_contract_shape_and_determinism():
     assert np.allclose(Z1, enc2.transform(X))
 
 
+def test_forecast_predicts_future():
+    """IDEA-088 forecast objective: on a predictable multivariate AR series, the latent
+    forecasts the future observation above the naive-mean baseline (R² > 0)."""
+    X, _ = _low_rank_series(noise=0.2, seed=3)
+    enc = SelfSupervisedEncoder(latent_dim=4, window=10, objective="forecast",
+                                horizon=1, epochs=300, seed=0).fit(X)
+    r2 = enc.self_score(X)
+    assert r2 > 0.05, f"forecast pretext R² too low: {r2:.3f}"
+
+
 def test_learned_structure_reconstruction_r2_positive():
     X, _ = _low_rank_series()
-    enc = SelfSupervisedEncoder(latent_dim=4, window=12, epochs=300, seed=0).fit(X)
+    enc = SelfSupervisedEncoder(latent_dim=4, window=12, objective="reconstruction",
+                                epochs=300, seed=0).fit(X)
     r2 = enc.reconstruction_r2(X)
     # mean-imputation of standardised held-out entries scores ≈ 0; a learned latent must beat it.
     assert r2 > 0.05, f"masked-reconstruction R² too low: {r2:.3f}"
@@ -65,7 +76,8 @@ def test_learned_structure_reconstruction_r2_positive():
 
 def test_recovers_true_latent_factors():
     X, S = _low_rank_series(noise=0.3, seed=2)
-    enc = SelfSupervisedEncoder(latent_dim=4, window=12, epochs=400, seed=0).fit(X)
+    enc = SelfSupervisedEncoder(latent_dim=4, window=12, objective="reconstruction",
+                                epochs=400, seed=0).fit(X)
     Z = enc.transform(X)
     r2_learned = _lin_r2(Z, S)
     # random projection of equal dim as the control (Rule 30 baseline)

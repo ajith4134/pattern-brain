@@ -27,14 +27,15 @@ class UniversalEmbeddingNode(Node):
     cost = "med"
 
     def __init__(self, name=None, latent_dim: int = 8, window: int = 16,
-                 mask_frac: float = 0.3, contrastive_weight: float = 0.1,
+                 objective: str = "forecast", horizon: int = 1,
+                 mask_frac: float = 0.15, contrastive_weight: float = 0.1,
                  epochs: int = 300, seed: int = 0, **params):
         super().__init__(name=name, latent_dim=latent_dim, window=window,
-                         mask_frac=mask_frac, contrastive_weight=contrastive_weight,
-                         epochs=epochs, seed=seed, **params)
+                         objective=objective, horizon=horizon, mask_frac=mask_frac,
+                         contrastive_weight=contrastive_weight, epochs=epochs, seed=seed, **params)
         self._enc = SelfSupervisedEncoder(
-            latent_dim=latent_dim, window=window, mask_frac=mask_frac,
-            contrastive_weight=contrastive_weight, epochs=epochs, seed=seed)
+            latent_dim=latent_dim, window=window, objective=objective, horizon=horizon,
+            mask_frac=mask_frac, contrastive_weight=contrastive_weight, epochs=epochs, seed=seed)
 
     def _fit(self, X: np.ndarray, y=None) -> None:
         self._enc.fit(X)
@@ -47,12 +48,13 @@ class UniversalEmbeddingNode(Node):
         latest = Z[-1]
         # confidence = how "active" / non-degenerate the latent is (mean |tanh| in (0,1))
         conf = float(np.clip(np.mean(np.abs(latest)), 0.0, 1.0))
-        r2 = float(self._enc.reconstruction_r2(X))
+        r2 = float(self._enc.self_score(X))
         return Belief(
             "embedding",
             payload={"latent": latest.tolist(),
                      "latent_dim": int(self._enc.latent_dim),
-                     "reconstruction_r2": r2},
+                     "objective": self._enc.objective,
+                     "pretext_r2": r2},
             confidence=conf,
             source=self.name,
         )

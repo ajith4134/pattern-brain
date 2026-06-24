@@ -339,3 +339,11 @@ Each general-purpose node re-tested on a REAL NON-TRADING dataset of the type it
   - **Volatility target (signal-bearing):** raw 8ch R²=+0.82, PCA(6) R²=+0.69, **embedding(6) R²=+0.02** → emb ≥ pca on **0/10** symbols.
 - **VERDICT: SHADOW / REJECT (as designed).** A masked-*reconstruction*+smoothness objective preserves reconstructive structure but DESTROYS predictive (vol) signal vs a plain PCA. Not promoted. Stays registered as SHADOW (available, no authority).
 - **Root cause + fix path (Rule 14/26):** pretext task is mis-aligned — reconstruction ≠ prediction. The KEEP path is a **forecasting-aligned SSL objective** (Contrastive Predictive Coding / next-latent prediction, à la TS2Vec/CPC) and/or a semi-supervised fine-tune (Stage-4) so the latent retains predictive directions. Tracked as IDEA-088.
+
+### 2026-06-24 (cont.) — P1 FIXED via IDEA-088 (forecasting-aligned objective) → KEEP
+- **Change:** `SelfSupervisedEncoder` gained `objective="forecast"` (DEFAULT) — next-observation prediction (CPC family): the latent is trained to PREDICT the future standardised obs, not reconstruct the past. `objective="reconstruction"` kept for ablation. Node `universal_embedding` defaults to forecast; `_predict` now reports `pretext_r2` via `self_score` (the recon-only call is fixed).
+- **Effectiveness (same OOS vol probe, `tools/eval_embedding.py`, 10 panel symbols):**
+  - **embedding(forecast, 6d) OOS R²=+0.75** vs PCA(6d) +0.69 vs raw(8ch) +0.82 → **emb ≥ PCA on 7/10 symbols.**
+  - Contrast: the old reconstruction objective scored +0.02 (lost to PCA 0/10). Same code, different pretext → +0.02 → +0.75.
+- **VERDICT: KEEP** as a learned nonlinear COMPRESSOR — beats PCA (its equal-dim baseline) at 6 dims; does NOT beat using all 8 raw channels (expected: more dims, no compression). The win that matters for the vision: when D is large (many fused sources) raw-all-channels won't scale and PCA is the standard compressor — beating PCA at equal dim is the relevant, honest result. Oracle 5/5; bank suite 11/11 (no breakage).
+- **Honest caveats:** dir-acc≈1.0 is a vol-target autocorrelation artifact (vol level sign), not skill — R² is the real metric. Edge over PCA is consistent (7/10) but not yet permutation-tested; a significance pass is the next rigor step before leaning on it in the DAG.
