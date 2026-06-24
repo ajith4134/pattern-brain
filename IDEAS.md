@@ -3,7 +3,7 @@ _Append-only log of every 💡 Ideas block Claude generates (owner rule 29, 2026
 _Newest at the bottom, dated. Each idea is a PROPOSAL — nothing here is implemented until the owner says "implement"._
 
 **Status legend:** `proposed` (default, awaiting decision) · `approved` (greenlit, not yet built) · `implemented` (built + verified) · `dismissed` (declined). Update an idea's status in place when it changes.
-**IDs:** every idea has a stable `IDEA-NNN` id (never reused, even if dismissed) so it can be referenced directly ("approve IDEA-003"). **next id: IDEA-088**
+**IDs:** every idea has a stable `IDEA-NNN` id (never reused, even if dismissed) so it can be referenced directly ("approve IDEA-003"). **next id: IDEA-089**
 
 ---
 
@@ -233,3 +233,7 @@ _These 💡 blocks were generated across the code-skills/contract/OU work and sh
 - **IDEA-085 · Stage-5 RL decision-maker — attention soft-router + lifecycle policy** — replace/extend the `gated` router (gap #3 / P2) with a learned softmax-attention top-k policy trained by policy-gradient/Gumbel-Softmax, plus an RL trade-lifecycle policy (size/SL/TP/exit) on cumulative reward. Stabilize with 2025 MoE-RL methods (RSPO router-shift, routing-replay, IS-correction; T2MIR token+task MoE-for-RL). Hardest/highest-variance → staged LAST; acceptance: must beat today's `gated` router OOS. **Status:** proposed
 - **IDEA-086 · Stage-4 Semi-Supervised label-expander** — confidence-thresholded pseudo-labeling + consistency regularization (Mean-Teacher/FixMatch) to stretch the few realized-trade labels onto the vast unlabeled bars; feeds the supervised expert heads more effective data. Explicit risk gate: pseudo-label snowballing → hard confidence threshold + OOS validation, must beat supervised-only OOS. **Status:** proposed
 - **IDEA-087 · Continual-learning LOOP wrapper around the 5 stages** — make the curriculum a cycle, not a one-shot line: new unlabeled data re-enters Stage 1 (re-pretrain) under drift detection (ADWIN/Page-Hinkley) + forgetting guards (EWC/replay), so the network keeps learning without catastrophic forgetting. Ties the 5 stages into a standing pipeline. **Status:** proposed
+
+### 2026-06-24 — VISION P1 build result + 💡 follow-up
+- **IDEA-084 · Universal Self-Supervised Embedding** — BUILT + oracle-tested (`pattern_brain/embedding.py`, node `universal_embedding`, `tests/test_embedding.py` 4/4). **Verdict: SHADOW/REJECT as designed** — code-correct (recovers true latent factors, recon R²=0.68) but on the volatility target it scores OOS R²=+0.02 vs PCA +0.69 vs raw +0.82 (0/10 symbols beat PCA). Pure-reconstruction pretext destroys predictive signal. Registered, not promoted. **Status:** implemented (shadow)
+- **IDEA-088 · Forecasting-aligned SSL objective (the P1 KEEP path)** — replace masked-reconstruction with **Contrastive Predictive Coding / next-latent prediction** (TS2Vec/CPC family): train the encoder so the latent PREDICTS the near-future representation, not just reconstructs the past. This aligns the latent with what's predictable (the reason TS2Vec/PatchTST win downstream). Optionally chain a Stage-4 semi-supervised fine-tune on the vol target. Re-test vs PCA/raw OOS before any KEEP. **Status:** proposed

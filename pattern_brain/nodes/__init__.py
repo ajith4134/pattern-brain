@@ -27,3 +27,6 @@ from . import tier1_allocation      # noqa: F401  (TIER-1 batch 3: HRP, CVaR, Me
 from . import tier1_stochastic      # noqa: F401  (TIER-1 batch 3: jump-diffusion, Heston, SV particle, percolation)
 from . import tier1_dynamical       # noqa: F401  (TIER-1 batch 3: Koopman/DMD, BSTS, info-geom, diffusion-map)
 from . import tier1_softcomputing   # noqa: F401  (TIER-1 batch 3: fuzzy-TS, grey GM(1,1), ANFIS)
+from . import semisupervised        # noqa: F401  (Gap-batch A: self/co-training, label prop/spread)
+from . import graph_embedding       # noqa: F401  (Gap-batch B: DeepWalk/Node2Vec random-walk + skip-gram embeddings)
+from . import embedding             # noqa: F401  (VISION P1 / Stage-1: learned self-supervised universal market embedding)

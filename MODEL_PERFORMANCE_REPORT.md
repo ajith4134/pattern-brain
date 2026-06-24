@@ -329,3 +329,13 @@ Each general-purpose node re-tested on a REAL NON-TRADING dataset of the type it
 - ⚠️ DOWNGRADED by the cross-domain test (the rule's payoff): **anfis → SHADOW** (real UCI diabetes RMSE 174 vs linear 53 — does not generalize past low-dim synthetic nonlinearity); **grey_gm11 scope-narrowed** to smooth/monotone only (loses on seasonal airline); **bsts_forecast → SHADOW** as a forecaster (a trend FILTER; loses to persistence on seasonal data too); fuzzy_ts SHADOW consistent.
 - Exempt: ofi/vpin/kyle_impact (trading-intrinsic); merton/mpc/cvar (oracle-validated domain-agnostic math).
 - Honesty note (Rule 14): an apparent har_rv blow-up on temps was a HARNESS bug (fed pre-computed RV to a node that wants a level + computes RV itself), not a model fault; fixed harness, har_rv unchanged and confirmed on both domains.
+
+---
+## 2026-06-24 — VISION P1: Universal Self-Supervised Encoder (`universal_embedding`, IDEA-084)
+- **Category:** representation / Stage-1 self-supervised (MODEL_NEURAL_NETWORK_VISION.md).
+- **Code correctness (oracle, tests/test_embedding.py 4/4):** on synthetic low-rank X=S·A+noise it recovers the TRUE latent factors (linear R²>0.5, beats random projection) and held-out masked-reconstruction R²≈0.68 → genuinely learns structure.
+- **Effectiveness (Rule 34, design-appropriate MULTIVARIATE data, `tools/eval_embedding.py`, OOS time-split, 10 panel symbols):**
+  - Return target (known-dead): emb/raw/pca ALL R²≈−0.05, dir-acc≈0.50 — no edge anywhere (invalid target, expected).
+  - **Volatility target (signal-bearing):** raw 8ch R²=+0.82, PCA(6) R²=+0.69, **embedding(6) R²=+0.02** → emb ≥ pca on **0/10** symbols.
+- **VERDICT: SHADOW / REJECT (as designed).** A masked-*reconstruction*+smoothness objective preserves reconstructive structure but DESTROYS predictive (vol) signal vs a plain PCA. Not promoted. Stays registered as SHADOW (available, no authority).
+- **Root cause + fix path (Rule 14/26):** pretext task is mis-aligned — reconstruction ≠ prediction. The KEEP path is a **forecasting-aligned SSL objective** (Contrastive Predictive Coding / next-latent prediction, à la TS2Vec/CPC) and/or a semi-supervised fine-tune (Stage-4) so the latent retains predictive directions. Tracked as IDEA-088.
