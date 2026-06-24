@@ -322,3 +322,10 @@ Built oracle-test-first under the Code-Generation Contract; 110 passed in the in
 
 Net batch 3: **2 forecaster KEEPs (heston_vol; har_rv was batch 2) — both VOLATILITY** + 11 KEEP-as-utility + 2 conditional KEEP (oscillator/nonlinear home turf) + 3 SHADOW/REJECT on returns. The project truth holds decisively: **standalone RETURN forecasters lose to the zero/persistence baseline; VOL/RISK/CONTROL tools earn their keep by correctness.** TIER-1 directly-buildable cluster COMPLETE (23/23). Bank: 96 registered Node types.
 ⏳ Rule-36 dual-domain (one trading + one real NON-trading dataset per general-purpose model) verification pass: next.
+
+## 2026-06-24 — DUAL-DOMAIN verification (Rule 36 clause 5) — TIER-1 general-purpose nodes
+Each general-purpose node re-tested on a REAL NON-TRADING dataset of the type its theory consumes (`tools/eval_crossdomain_tier1.py`; data/crossdomain/ sunspots/airline/temps/diabetes/digits). Full table: MODEL_REPORT_crossdomain_tier1.md.
+- ✅ CONFIRMED on a second real domain: koopman_dmd (sunspots, BEATS), heston_vol & har_rv (temps RV, BEATS), sv_particle (corr +0.57), infogeom_distance (spike 6.06 vs 0.68), jump_diffusion (12 vs 1), percolation_risk (0.41 vs 0.02), diffusion_map (pendigits 0.80 vs 0.10).
+- ⚠️ DOWNGRADED by the cross-domain test (the rule's payoff): **anfis → SHADOW** (real UCI diabetes RMSE 174 vs linear 53 — does not generalize past low-dim synthetic nonlinearity); **grey_gm11 scope-narrowed** to smooth/monotone only (loses on seasonal airline); **bsts_forecast → SHADOW** as a forecaster (a trend FILTER; loses to persistence on seasonal data too); fuzzy_ts SHADOW consistent.
+- Exempt: ofi/vpin/kyle_impact (trading-intrinsic); merton/mpc/cvar (oracle-validated domain-agnostic math).
+- Honesty note (Rule 14): an apparent har_rv blow-up on temps was a HARNESS bug (fed pre-computed RV to a node that wants a level + computes RV itself), not a model fault; fixed harness, har_rv unchanged and confirmed on both domains.
