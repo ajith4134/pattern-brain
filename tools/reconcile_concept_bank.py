@@ -37,32 +37,32 @@ STATUS: dict[str, str] = {
     "entropy_regime": "B", "mi_screen": "B", "transfer_entropy": "B", "mdl_compress": "B",
     "perm_entropy": "B",
     # D4 physics/SDE  (TIER-3 build: gbm_baseline, langevin_sampler, fokker_planck now ✅)
-    "gbm_baseline": "B", "ou_meanrevert": "B", "jump_diffusion": "N", "heston_vol": "N",
+    "gbm_baseline": "B", "ou_meanrevert": "B", "jump_diffusion": "B", "heston_vol": "B",
     "rough_vol": "B", "fokker_planck": "B", "langevin_sampler": "B", "ising_herding": "N",
-    "soc_avalanche": "B", "percolation_risk": "N", "superstat_vol": "N",
+    "soc_avalanche": "B", "percolation_risk": "B", "superstat_vol": "N",
     # D5 energy-based  (TIER-3 build: maxent_dist now ✅)
     "maxent_dist": "B", "rbm_energy": "B", "active_inference": "N",
     # D6 geometric/topological
-    "tda_persistence": "B", "infogeom_distance": "N", "wasserstein_shift": "N",
-    "diffusion_map": "N", "path_signature": "M", "tensor_network": "N",
+    "tda_persistence": "B", "infogeom_distance": "B", "wasserstein_shift": "N",
+    "diffusion_map": "B", "path_signature": "M", "tensor_network": "N",
     # D7 dynamical/chaos
-    "lyapunov_chaos": "B", "takens_embed": "B", "koopman_dmd": "N", "reservoir_esn": "B",
+    "lyapunov_chaos": "B", "takens_embed": "B", "koopman_dmd": "B", "reservoir_esn": "B",
     "multifractal": "B", "rqa_determinism": "B",
     # D8 causal
     "granger_cause": "M", "ccm_cause": "N", "scm_intervene": "N", "pcmci_graph": "N",
     # D9 game-theoretic
-    "kyle_impact": "N", "adversarial_robust": "N", "mfg_crowding": "N",
+    "kyle_impact": "B", "adversarial_robust": "N", "mfg_crowding": "N",
     # D10 control  (TIER-3 build: hjb_control [Bellman/HJB], almgren_exec now ✅)
-    "hjb_control": "B", "merton_alloc": "N", "almgren_exec": "B", "mpc_position": "N",
+    "hjb_control": "B", "merton_alloc": "B", "almgren_exec": "B", "mpc_position": "B",
     "rl_policy": "B",
     # D11 optimization/OR
-    "markowitz": "M", "kelly_size": "M", "hrp_alloc": "N", "cvar_opt": "N", "bayes_opt": "M",
+    "markowitz": "M", "kelly_size": "M", "hrp_alloc": "B", "cvar_opt": "B", "bayes_opt": "M",
     # D12 bio-inspired
     "deep_seq": "B", "patchtst": "B", "mamba_ssm": "B", "tsfm_zeroshot": "N",
     # D13 symbolic
     "symbolic_regression": "B",
     # D14 soft computing
-    "fuzzy_ts": "N", "grey_gm11": "N", "anfis": "N",
+    "fuzzy_ts": "B", "grey_gm11": "B", "anfis": "B",
     # D15 quantum
     "quantum_kernel": "N", "qubo_portfolio": "N",
     # D16 linguistic/neuro-symbolic
@@ -70,7 +70,7 @@ STATUS: dict[str, str] = {
     # D-signal
     "fft_cycles": "B", "wavelet": "B", "emd": "B", "ssa": "B", "hilbert_phase": "B",
     # microstructure
-    "ofi": "N", "vpin": "N", "as_market_make": "N", "lob_hawkes": "N", "rough_hawkes_heston": "N",
+    "ofi": "B", "vpin": "B", "as_market_make": "N", "lob_hawkes": "N", "rough_hawkes_heston": "N",
     # ---- TIER-2 frontier (mostly deferred) ----
     "sig_kernel": "N", "neural_cde": "N", "neural_sde": "N", "deep_bsde": "N",
     "diffusion_synth": "N", "schrodinger_bridge": "N", "rmt_clean": "B", "rie_covariance": "M",

@@ -22,3 +22,8 @@ from . import tier3_stochastic   # noqa: F401  (TIER-3: GBM/Bachelier, Langevin,
 from . import tier3_control      # noqa: F401  (TIER-3: log-utility, Lagrange alloc, Bellman/HJB)
 from . import tier3_pricing      # noqa: F401  (TIER-3: Newton kinematics, Almgren exec, Black-Scholes)
 from . import tier1_classics     # noqa: F401  (TIER-1 directly-buildable classics, built one at a time)
+from . import tier1_microstructure  # noqa: F401  (TIER-1 batch 3: OFI, VPIN, Kyle lambda)
+from . import tier1_allocation      # noqa: F401  (TIER-1 batch 3: HRP, CVaR, Merton, MPC)
+from . import tier1_stochastic      # noqa: F401  (TIER-1 batch 3: jump-diffusion, Heston, SV particle, percolation)
+from . import tier1_dynamical       # noqa: F401  (TIER-1 batch 3: Koopman/DMD, BSTS, info-geom, diffusion-map)
+from . import tier1_softcomputing   # noqa: F401  (TIER-1 batch 3: fuzzy-TS, grey GM(1,1), ANFIS)

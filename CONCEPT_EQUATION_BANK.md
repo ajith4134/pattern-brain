@@ -13,9 +13,9 @@ tool after adding nodes to refresh it.
 - **⬜ NOT built** — an open model candidate (this is the "what's left to implement" list).
 - **▫️ foundational** — an underpinning concept / metric, not meant to be its own node.
 
-**LIVE TALLY (193 concepts): 80 ✅ built-Node · 10 🔬 built-module · 70 ⬜ NOT built · 33 ▫️ foundational.**
-→ **90 of 160 buildable concepts are done (~56%); 70 remain to implement** (most are TIER-2 ⭐ frontier — gate hardest, Rule 30).
-→ **TIER-1 directly-buildable cluster: being built in small batches** (2026-06-23/24). Done so far (5): `evt_tail_risk` (EVT Hill+GPD tail/VaR/ES — KEEP-utility) · **batch 2 (2026-06-24):** `johansen_coint` (Engle-Granger cointegration + own light-stack ADF — KEEP-utility; correct on oracle, honest real result: crypto large-caps are near-unit-root / weakly cointegrated in this corpus) · `har_rv` (Corsi HAR realized-vol forecaster — **KEEP, beats persistence on 10/10 panel symbols, +20–48% MSE; the first TIER-1 node that genuinely beats a baseline because it forecasts VOLATILITY, which is predictable, not returns**) · `copula_dependence` (Kendall-τ + Gaussian-copula ρ + empirical tail dependence — KEEP-utility; recovers τ≈0.70 / tail-dep≈0.72 on ETH/BTC vs ~0.06 independent control) · `bocpd_break` (Bayesian online change-point via run-length-posterior collapse — KEEP-utility; localizes a real spliced regime break to ±5 bars).
+**LIVE TALLY (193 concepts): 96 ✅ built-Node · 10 🔬 built-module · 54 ⬜ NOT built · 33 ▫️ foundational.**
+→ **106 of 160 buildable concepts are done (~66%); 54 remain to implement** (now almost all TIER-2 ⭐ frontier — gate hardest, Rule 30).
+→ **TIER-1 directly-buildable cluster: ✅ COMPLETE — 23/23 built** (2026-06-23/24). evt_tail_risk + batch 2 (johansen_coint, har_rv [KEEP — beats persistence 10/10], copula_dependence, bocpd_break) + **batch 3, 18 nodes via 5 parallel file-isolated agents (2026-06-24):** microstructure `ofi`/`vpin`/`kyle_impact`; allocation/control `hrp_alloc` (OOS variance ⅓ of equal-weight) /`cvar_opt`/`merton_alloc`/`mpc_position`; stochastic `jump_diffusion`/`heston_vol` (**KEEP — beats persistence 10/10 on variance**) /`sv_particle`/`percolation_risk`; dynamical `koopman_dmd`/`bsts_forecast`/`infogeom_distance`/`diffusion_map` (cross-domain pendigits 0.80 vs 0.10 chance); soft-computing `fuzzy_ts`/`grey_gm11`/`anfis`. **Honest verdicts:** 2 genuine forecaster KEEPs (har_rv, heston_vol — both VOLATILITY); the rest KEEP-as-utility (risk/regime/sizing/control tools) or SHADOW/REJECT for return-forecasters (koopman/bsts/fuzzy/grey/anfis all lose to the zero/persistence baseline on returns — the project lesson, measured). ⏳ Rule-36 dual-domain (real non-trading dataset per model) being added next.
 → **TIER-3 (timeless foundations) is ✅ COMPLETE — 26/26 built** (the 2026-06-23 multi-agent build added 12 nodes: bayes_update, maxent_dist, chebyshev_bound, gbm_baseline, langevin_sampler, fokker_planck, log_utility, lagrange_opt, hjb_control, momentum_kinematics, almgren_exec, bs_pricing — most verdict KEEP-as-utility; none beats persistence on point forecast, per the project lesson).
 
 > Axes A/B/C/E (paradigm/task/architecture/property) are HOW we wrap these; Axis D (below) is WHAT the model
@@ -60,14 +60,14 @@ tool after adding nodes to refresh it.
 ## D4 — Physics-based / Stochastic Processes (the "physics models")
 - ✅ **Geometric Brownian Motion dS=μS dt+σS dW** — baseline price SDE. [D] sim/baseline → `gbm_baseline`
 - ✅ **Ornstein-Uhlenbeck dX=θ(μ−X)dt+σdW** — mean reversion (pairs, vol). [D] mean-revert → `ou_meanrevert`
-- ⬜ **Jump-diffusion (Merton), Kou** — Brownian + Poisson jumps; fat tails/gaps. [D] → `jump_diffusion`
-- ⬜ **Heston stochastic-vol model** — vol is its own mean-reverting SDE. [D] vol surface → `heston_vol`
+- ✅ **Jump-diffusion (Merton), Kou** — Brownian + Poisson jumps; fat tails/gaps. [D] → `jump_diffusion`
+- ✅ **Heston stochastic-vol model** — vol is its own mean-reverting SDE. [D] vol surface → `heston_vol`
 - ✅ **Rough volatility (rough Bergomi, fractional)** ⭐ — vol driven by fractional BM, H<0.5; matches data. [D] → `rough_vol`
 - ✅ **Fokker-Planck / Kolmogorov forward** — evolution of the probability density of an SDE. [I] distribution forecast → `fokker_planck`
 - ✅ **Langevin dynamics** — force + noise; sampling & dynamics. [I] → `langevin_sampler`
 - ⬜ **Ising / mean-field / spin-glass** ⭐ econophysics — trader herding → magnetization; bubbles/crashes. [I] sentiment/herding → `ising_herding`
 - ✅ **Self-Organized Criticality / power laws / avalanches** — heavy-tailed crash sizes. [I] tail/crash → `soc_avalanche`
-- ⬜ **Percolation / network contagion** — connectivity phase transition; systemic risk. [I] → `percolation_risk`
+- ✅ **Percolation / network contagion** — connectivity phase transition; systemic risk. [I] → `percolation_risk`
 - ⬜ **Superstatistics** ⭐ — superposition of Gaussian processes w/ fluctuating β → fat tails/long memory. [I] → `superstat_vol`
 - ▫️ **Fluctuation-Dissipation / response functions** — how markets respond to shocks. [I]
 
@@ -79,16 +79,16 @@ tool after adding nodes to refresh it.
 
 ## D6 — Geometric / Topological / Algebraic
 - ✅ **Topological Data Analysis / Persistent Homology** ⭐ — shape of point clouds; crash precursors (loops/voids). [I] crash signal → `tda_persistence`
-- ⬜ **Information Geometry (Fisher-Rao metric)** — distance between probability models on a manifold. [I] regime distance → `infogeom_distance`
+- ✅ **Information Geometry (Fisher-Rao metric)** — distance between probability models on a manifold. [I] regime distance → `infogeom_distance`
 - ⬜ **Optimal Transport / Wasserstein distance** ⭐ — minimal cost to morph one distribution into another. [I] regime shift/dist → `wasserstein_shift`
-- ⬜ **Manifold learning (diffusion maps, UMAP, Isomap, Laplacian eigenmaps)** — nonlinear low-dim structure. [I] embedding → `diffusion_map`
+- ✅ **Manifold learning (diffusion maps, UMAP, Isomap, Laplacian eigenmaps)** — nonlinear low-dim structure. [I] embedding → `diffusion_map`
 - 🔬 **Path Signatures / rough paths** ⭐ — signature transform = ordered moments of a path; universal feature set; signature kernels. [D] sequence feature → `path_signature`
 - ⬜ **Tensor networks (MPS/TT)** ⭐ — compress high-dim correlations (quantum-inspired). [I] → `tensor_network` (see D15)
 
 ## D7 — Dynamical Systems / Chaos / Fractal
 - ✅ **Lyapunov exponent λ** — sensitivity to initial conditions; chaos vs noise. [I] regime → `lyapunov_chaos` (IDEA-001/005)
 - ✅ **Takens embedding / attractor reconstruction** — rebuild state space from one series. [I] → `takens_embed`
-- ⬜ **Koopman operator / DMD / EDMD** ⭐ — lift nonlinear dynamics to linear evolution; forecast there. [D] → `koopman_dmd` (IDEA-013)
+- ✅ **Koopman operator / DMD / EDMD** ⭐ — lift nonlinear dynamics to linear evolution; forecast there. [D] → `koopman_dmd` (IDEA-013)
 - ✅ **Reservoir computing / Echo State Networks** — fixed random recurrent net + linear readout; great on chaos. [D] → `reservoir_esn`
 - ✅ **Detrended Fluctuation Analysis (DFA) / Hurst** — long-range correlations, persistence. [I] → `hurst_dfa`
 - ✅ **Multifractal (MF-DFA, MMAR)** ⭐ — spectrum of scaling exponents; vol clustering. [I] → `multifractal`
@@ -103,22 +103,22 @@ tool after adding nodes to refresh it.
 - ▫️ **Double ML / instrumental variables** — debiased causal effect estimates. [I]
 
 ## D9 — Game-Theoretic
-- ⬜ **Kyle model / Glosten-Milgrom** — informed vs noise traders; price impact λ. [D] microstructure → `kyle_impact`
+- ✅ **Kyle model / Glosten-Milgrom** — informed vs noise traders; price impact λ. [D] microstructure → `kyle_impact`
 - ⬜ **Nash / minimax / adversarial** ⭐ — robust strategy vs worst-case; GAN-style. [I] robustness → `adversarial_robust`
 - ⬜ **Mean-field games** ⭐ — equilibrium among many small agents. [I] crowding → `mfg_crowding`
 
 ## D10 — Control-Theoretic
 - ✅ **Stochastic optimal control / HJB** — optimal action under dynamics+noise. [D] sizing/exit → `hjb_control`
-- ⬜ **Merton portfolio problem** — optimal consumption/allocation. [D] sizing → `merton_alloc`
+- ✅ **Merton portfolio problem** — optimal consumption/allocation. [D] sizing → `merton_alloc`
 - ✅ **Almgren-Chriss optimal execution** — minimize impact+risk of liquidation. [D] execution → `almgren_exec`
-- ⬜ **Model Predictive Control (MPC) / LQG** — rolling optimization under a model. [D] position control → `mpc_position`
+- ✅ **Model Predictive Control (MPC) / LQG** — rolling optimization under a model. [D] position control → `mpc_position`
 - ✅ **RL for execution/sizing (PPO, SAC, DQN)** — learned policy from reward. [D] → `rl_policy` (have rl.py)
 
 ## D11 — Optimization / Operations Research
 - 🔬 **Markowitz mean-variance / efficient frontier** — risk-return tradeoff. [D] allocation → `markowitz`
 - 🔬 **Kelly criterion / fractional Kelly f*=μ/σ²** — growth-optimal bet sizing. [D] sizing → `kelly_size`
-- ⬜ **Risk parity / HRP (hierarchical risk parity)** ⭐ — allocate by risk contribution; ML-clustered. [D] → `hrp_alloc`
-- ⬜ **CVaR / robust optimization** — optimize tail risk. [D] → `cvar_opt`
+- ✅ **Risk parity / HRP (hierarchical risk parity)** ⭐ — allocate by risk contribution; ML-clustered. [D] → `hrp_alloc`
+- ✅ **CVaR / robust optimization** — optimize tail risk. [D] → `cvar_opt`
 - 🔬 **Bayesian optimization** — sample-efficient hyperparam/strategy search. [I] tuning → `bayes_opt`
 - ✅ **Metaheuristics (GA, PSO, ACO, simulated annealing)** — global search of strategy space. [I] → (have evolution.py)
 
@@ -135,10 +135,10 @@ tool after adding nodes to refresh it.
 - ▫️ **Genetic programming rule induction / decision lists** — human-readable rules. [I]
 
 ## D14 — Soft Computing (uncertainty/imprecision)
-- ⬜ **Fuzzy time series / fuzzy logic** — linguistic rules over fuzzy sets. [I] regime rules → `fuzzy_ts`
-- ⬜ **Grey systems / GM(1,1)** — forecasting from very few points. [I] data-poor → `grey_gm11`
+- ✅ **Fuzzy time series / fuzzy logic** — linguistic rules over fuzzy sets. [I] regime rules → `fuzzy_ts`
+- ✅ **Grey systems / GM(1,1)** — forecasting from very few points. [I] data-poor → `grey_gm11`
 - ▫️ **Rough sets** — decision rules under indiscernibility. [I]
-- ⬜ **Neuro-fuzzy (ANFIS)** — learnable fuzzy rules. [I] → `anfis`
+- ✅ **Neuro-fuzzy (ANFIS)** — learnable fuzzy rules. [I] → `anfis`
 
 ## D15 — Quantum / Quantum-inspired
 - ⬜ **Quantum kernels / variational quantum circuits** — feature maps in Hilbert space (simulator). [I] research → `quantum_kernel` (bench in trading bot)
@@ -158,8 +158,8 @@ tool after adding nodes to refresh it.
 - ✅ **Hilbert transform / instantaneous frequency & phase** — cycle phase for timing. [I] → `hilbert_phase`
 
 ## MICROSTRUCTURE / FINANCE-SPECIFIC (high-value, applies the above to order flow)
-- ⬜ **Order Flow Imbalance (OFI)** — net buy/sell pressure from L1/L2. [D] → `ofi`
-- ⬜ **VPIN (volume-synchronized prob. of informed trading)** — toxicity/flow-informedness. [D] → `vpin`
+- ✅ **Order Flow Imbalance (OFI)** — net buy/sell pressure from L1/L2. [D] → `ofi`
+- ✅ **VPIN (volume-synchronized prob. of informed trading)** — toxicity/flow-informedness. [D] → `vpin`
 - ⬜ **Avellaneda-Stoikov market making** — optimal quotes around reservation price. [D] → `as_market_make`
 - ▫️ **Hasbrouck information share / price discovery** — who leads price. [I]
 - ⬜ **Limit-order-book models (queue-reactive, Hawkes-LOB)** ⭐ — LOB dynamics. [D] → `lob_hawkes`

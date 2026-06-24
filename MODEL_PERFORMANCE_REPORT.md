@@ -296,3 +296,29 @@ Net: 2 REJECT-as-forecaster + 1 SHADOW + 9 KEEP-as-utility — consistent with t
 Net: **1 genuine forecaster KEEP (har_rv)** + 3 KEEP-as-utility (risk/regime/stat tools). The project
 truth holds and is sharpened: standalone *return* forecasters lose to persistence, but a *volatility*
 forecaster (HAR-RV) wins decisively — vol is the predictable target. Bank: 80 registered Node types.
+
+## 2026-06-24 — TIER-1 batch 3 (18 nodes via 5 parallel file-isolated agents) — completes the directly-buildable cluster
+Built oracle-test-first under the Code-Generation Contract; 110 passed in the integrated regression subset; all conform. Per-family reports: MODEL_REPORT_tier1_{microstructure,allocation,stochastic,dynamical,softcomputing}.md.
+| node | family | verdict | headline evidence |
+|---|---|---|---|
+| `ofi` | microstructure | KEEP-as-utility | corr(OFI, bar return) +0.26…+0.56 across 4 symbols vs ~0 shuffled control |
+| `vpin` | microstructure | KEEP-as-utility | oracle 0.97 toxic / <0.25 balanced; toxicity↔vol NOT confirmed on a calm sample (needs stress data) |
+| `kyle_impact` | microstructure | KEEP-as-utility | recovers λ=0.7 (r²>0.9); real λ>0 all symbols; cross-asset ordering confounded by price level (documented) |
+| `hrp_alloc` | allocation | KEEP-as-utility | OOS variance 2.12e-5 vs equal-weight 6.27e-5 (~⅓), beats inverse-variance; finite on rank-deficient cov |
+| `cvar_opt` | allocation | KEEP-as-utility | OOS worst-5% loss −6.25e-3 vs equal-weight −1.74e-2 (~64% smaller); under-weights fat-tailed asset |
+| `merton_alloc` | sizing | KEEP-as-utility | closed-form (μ−r)/(γσ²) exact to 1e-12; correct monotonicities |
+| `mpc_position` | control | KEEP-as-utility | tracks signal while smoothing; turnover 190 vs 966 naive (~5× less churn); cost-ablation monotone |
+| `jump_diffusion` | stochastic | KEEP-as-utility | jump separation precision 0.99/recall 0.63 (sub-σ jumps unrecoverable); λ recovered; 1.7–4.4% crypto jump rate |
+| `heston_vol` | stochastic | **KEEP** | recovers θ/κ; variance forecast **beats persistence 10/10** (not claimed to beat HAR) |
+| `sv_particle` | stochastic | KEEP-as-utility | filtered vol corr 0.76 with true latent (fixed log-y² attenuation bias); 0.69 with \|returns\| real |
+| `percolation_risk` | physics | KEEP-as-utility | giant-component phase transition recovered; systemic-risk series corr 0.45 with market-wide moves |
+| `koopman_dmd` | dynamical | **REJECT (returns)** / KEEP (oscillator) | recovers sine freq/decay; on returns beats persistence 10/10 but loses to ZERO baseline 0/10 |
+| `bsts_forecast` | structural | KEEP (levels) / SHADOW (returns) | Kalman level tracks price 0.097% rel-err; loses to zero baseline 0/10 on returns |
+| `infogeom_distance` | geometric | KEEP-as-utility | matches Fisher-Rao closed form 1e-9; vol-jump spike >4×; dynamic range 10/10 |
+| `diffusion_map` | manifold | KEEP-as-utility | recovers 1-D arc \|Spearman\|=1.0; **Rule-36 cross-domain pendigits kNN 0.80 vs 0.10 chance** |
+| `fuzzy_ts` | soft | SHADOW | tracks smooth level corr 0.996; beats persistence 0/10 on panel |
+| `grey_gm11` | soft | KEEP-as-utility | recovers exp growth from 6 points (err 0.24 vs persistence 17.3); data-poor extrapolator; 0/10 on returns |
+| `anfis` | soft | KEEP (nonlinear) / SHADOW (returns) | sin(x1)+x2² RMSE 0.099 vs linear 1.169 (>10×); 0/10 vs zero on returns |
+
+Net batch 3: **2 forecaster KEEPs (heston_vol; har_rv was batch 2) — both VOLATILITY** + 11 KEEP-as-utility + 2 conditional KEEP (oscillator/nonlinear home turf) + 3 SHADOW/REJECT on returns. The project truth holds decisively: **standalone RETURN forecasters lose to the zero/persistence baseline; VOL/RISK/CONTROL tools earn their keep by correctness.** TIER-1 directly-buildable cluster COMPLETE (23/23). Bank: 96 registered Node types.
+⏳ Rule-36 dual-domain (one trading + one real NON-trading dataset per general-purpose model) verification pass: next.
